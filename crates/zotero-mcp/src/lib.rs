@@ -15,14 +15,17 @@ mod better_notes;
 mod catalog;
 mod resources;
 mod response;
+pub mod security;
 mod semantic_search;
 mod server;
+pub mod state;
 mod zotero;
 
 use rmcp::ServiceExt;
+pub use security::{SecurityConfig, SecurityProfile};
 use server::ZoteroMcpServer;
+pub use state::AppState;
 use tracing_subscriber::EnvFilter;
-use zotero_api::AppState;
 
 /// Runs the Zotero MCP server binary.
 ///

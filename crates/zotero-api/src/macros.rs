@@ -32,9 +32,23 @@ macro_rules! string_newtype {
         $vis struct $name(String);
 
         impl $name {
+            /// Constructs a new instance from any string-like type.
+            #[inline]
+            $vis fn new<S: Into<String>>(value: S) -> Self {
+                Self(value.into())
+            }
+
             /// Returns the inner string slice.
             #[inline]
             $vis fn as_str(&self) -> &str {
+                &self.0
+            }
+        }
+
+        impl std::ops::Deref for $name {
+            type Target = str;
+            #[inline]
+            fn deref(&self) -> &Self::Target {
                 &self.0
             }
         }

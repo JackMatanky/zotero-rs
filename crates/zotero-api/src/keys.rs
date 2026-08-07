@@ -71,7 +71,7 @@ pub(crate) struct RelationUriError;
 impl From<&ItemKey> for RelationUri {
     #[inline]
     fn from(key: &ItemKey) -> Self {
-        Self(format!("{ITEM_RELATION_URI_BASE}{}", key.as_str()))
+        Self::new(format!("{ITEM_RELATION_URI_BASE}{}", key.as_str()))
     }
 }
 
@@ -117,7 +117,30 @@ impl std::fmt::Display for RelationUriError {
     Serialize,
 )]
 #[serde(transparent)]
-pub struct LibraryVersion(pub(crate) u64);
+pub struct LibraryVersion(u64);
+
+impl LibraryVersion {
+    #[inline]
+    #[must_use]
+    pub fn new(value: u64) -> Self {
+        Self(value)
+    }
+
+    #[inline]
+    #[must_use]
+    pub fn as_u64(&self) -> u64 {
+        self.0
+    }
+}
+
+impl std::ops::Deref for LibraryVersion {
+    type Target = u64;
+
+    #[inline]
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
 
 impl std::fmt::Display for LibraryVersion {
     #[inline]

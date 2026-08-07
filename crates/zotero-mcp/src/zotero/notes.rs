@@ -49,9 +49,7 @@ use rmcp::{
 };
 use schemars::JsonSchema;
 use serde::Deserialize;
-use zotero_api::{
-    AnnotationDraft, ItemKey, ItemType, ZoteroClient, ZoteroItem,
-};
+use zotero_api::{AnnotationDraft, ItemKey, ItemType, ZoteroItem};
 
 use crate::{
     ZoteroMcpServer,
@@ -211,7 +209,7 @@ impl ZoteroMcpServer {
         &self,
         args: GetNotesArgs,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let client = ZoteroClient::new(&self.state);
+        let client = self.state.zotero_client();
         match client.get_item_children(&ItemKey::from(args.item_key)).await {
             Ok(children) => Ok(json_success(&filter_notes(children))),
             Err(e) => Ok(text_error(&e)),
@@ -231,7 +229,10 @@ impl ZoteroMcpServer {
         &self,
         args: CreateNoteArgs,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let client = ZoteroClient::new(&self.state);
+        if let Err(e) = self.state.check_write_permission() {
+            return Ok(text_error(&e));
+        }
+        let client = self.state.zotero_client();
         Ok(json_result(
             client
                 .create_note(
@@ -255,7 +256,7 @@ impl ZoteroMcpServer {
         &self,
         args: SynthesizeAnnotationsArgs,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let client = ZoteroClient::new(&self.state);
+        let client = self.state.zotero_client();
         Ok(text_result(
             client.synthesize_annotations(&ItemKey::from(args.item_key)).await,
         ))
@@ -274,7 +275,10 @@ impl ZoteroMcpServer {
         &self,
         args: CreateAnnotationArgs,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let client = ZoteroClient::new(&self.state);
+        if let Err(e) = self.state.check_write_permission() {
+            return Ok(text_error(&e));
+        }
+        let client = self.state.zotero_client();
         let draft = AnnotationDraft {
             parent_attachment_key: args.parent_attachment_key.into(),
             annotation_type: args.annotation_type.into(),

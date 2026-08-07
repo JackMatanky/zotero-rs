@@ -28,7 +28,6 @@ use rmcp::{
 };
 use schemars::JsonSchema;
 use serde::Deserialize;
-use zotero_api::ZoteroClient;
 
 use crate::{ZoteroMcpServer, response::json_success};
 
@@ -79,7 +78,7 @@ impl ZoteroMcpServer {
     async fn zotero_status_impl(
         &self,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let client = ZoteroClient::new(&self.state);
+        let client = self.state.zotero_client();
         let status = client.check_status().await;
         Ok(json_success(&status))
     }

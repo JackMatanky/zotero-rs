@@ -1,3 +1,4 @@
+#![cfg(feature = "sqlite")]
 //! Read-only access to Zotero's local `zotero.sqlite` database.
 //!
 //! Locates the database using the standard Zotero desktop configuration search

@@ -19,10 +19,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     keys::{CollectionKey, ItemKey, LibraryVersion, TagName},
-    types::{
-        AnnotationType, CollectionParent, CreatorType, ItemType, LinkMode,
-        TagOrigin,
-    },
+    types::{CollectionParent, CreatorType, ItemType, LinkMode, TagOrigin},
 };
 
 /// Response payload returned by batch create/update operations.
@@ -96,9 +93,8 @@ pub struct ItemMeta {
 /// A single Zotero library item as returned by the Local API.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ZoteroItem {
-    pub(crate) key: ItemKey,
-    pub(crate) version: LibraryVersion,
-    /// Owning library metadata object.
+    pub key: ItemKey,
+    pub version: LibraryVersion,
     #[serde(default)]
     pub library: Option<LibraryInfo>,
     /// HATEOAS API link objects.
@@ -111,117 +107,190 @@ pub struct ZoteroItem {
 }
 
 /// Bibliographic, attachment, note, and annotation fields for a Zotero item.
-///
-/// Maps Zotero's `camelCase` JSON field names across item types.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct ZoteroItemData {
-    pub(crate) key: ItemKey,
+    pub key: ItemKey,
     #[serde(default)]
-    pub(crate) version: LibraryVersion,
+    pub version: LibraryVersion,
     #[serde(rename = "itemType", default)]
     pub item_type: ItemType,
-    pub(crate) title: Option<String>,
+    pub title: Option<String>,
     #[serde(default)]
-    pub(crate) creators: Vec<ZoteroCreator>,
-    /// Abstract or summary text string.
-    pub(crate) abstract_note: Option<String>,
-    pub(crate) publication_title: Option<String>,
-    pub(crate) volume: Option<String>,
-    pub(crate) issue: Option<String>,
-    pub(crate) pages: Option<String>,
-    pub(crate) date: Option<String>,
-    pub(crate) series: Option<String>,
-    pub(crate) series_title: Option<String>,
-    pub(crate) series_text: Option<String>,
-    pub(crate) journal_abbreviation: Option<String>,
-    pub(crate) publisher: Option<String>,
-    pub(crate) institution: Option<String>,
-    pub(crate) place: Option<String>,
-    pub(crate) doi: Option<String>,
-    /// Zotero's native citation key field.
-    ///
-    /// Zotero 9 exposes this as `itemFields.citationKey`, and quick search can
-    /// search it server-side. This field takes precedence over any
-    /// `Citation Key: ...` line Better `BibTeX` may write to
-    /// [`ZoteroItemData::extra`].
-    #[serde(rename = "citationKey")]
-    pub(crate) citation_key: Option<String>,
-    pub(crate) isbn: Option<String>,
-    pub(crate) issn: Option<String>,
-    pub(crate) url: Option<String>,
-    pub(crate) access_date: Option<String>,
-    pub(crate) archive: Option<String>,
-    pub(crate) archive_location: Option<String>,
-    pub(crate) library_catalog: Option<String>,
-    pub(crate) call_number: Option<String>,
-    pub(crate) rights: Option<String>,
-    /// Free-form extra metadata field (e.g. citation keys or custom fields).
-    pub(crate) extra: Option<String>,
+    pub creators: Vec<ZoteroCreator>,
     #[serde(default)]
-    pub(crate) tags: Vec<ZoteroTag>,
+    pub tags: Vec<ZoteroTag>,
     #[serde(default)]
-    pub(crate) collections: Vec<CollectionKey>,
-    /// Map of Zotero relation predicate names to URI values.
+    pub collections: Vec<CollectionKey>,
     #[serde(default)]
-    pub(crate) relations: serde_json::Value,
-    pub(crate) date_added: Option<String>,
-    pub(crate) date_modified: Option<String>,
-    /// Parent item key for attachment and child note items.
-    pub(crate) parent_item: Option<ItemKey>,
-    /// Attachment storage mode (e.g. `"imported_file"` or `"linked_url"`).
-    pub link_mode: Option<LinkMode>,
-    /// Attachment MIME content type.
-    #[serde(rename = "contentType")]
-    pub content_type: Option<String>,
-    pub(crate) charset: Option<String>,
-    pub(crate) filename: Option<String>,
-    pub path: Option<String>,
-    /// HTML content body for note items.
-    pub(crate) note: Option<String>,
-    /// PDF annotation kind (e.g. `"highlight"`, `"underline"`, or `"note"`).
-    #[serde(rename = "annotationType")]
-    pub(crate) annotation_type: Option<AnnotationType>,
-    /// Selected text for PDF highlight/underline annotations.
-    #[serde(rename = "annotationText")]
-    pub(crate) annotation_text: Option<String>,
-    /// User comment attached to a PDF annotation.
-    #[serde(rename = "annotationComment")]
-    pub(crate) annotation_comment: Option<String>,
-    /// CSS hex color string for PDF annotations.
-    #[serde(rename = "annotationColor")]
-    pub(crate) annotation_color: Option<String>,
-    /// PDF page label where the annotation appears.
-    #[serde(rename = "annotationPageLabel")]
-    pub(crate) annotation_page_label: Option<String>,
-    /// Whether the item is in the trash.
+    pub relations: serde_json::Value,
+    #[serde(rename = "dateAdded", default)]
+    pub date_added: Option<String>,
+    #[serde(rename = "dateModified", default)]
+    pub date_modified: Option<String>,
     #[serde(default)]
-    pub(crate) deleted: bool,
+    pub deleted: bool,
+
+    /// Dynamic catch-all for item-type specific fields.
+    #[serde(flatten)]
+    pub extra_fields: std::collections::HashMap<String, serde_json::Value>,
+}
+
+impl ZoteroItemData {
+    /// Returns a string reference to a core field or dynamic extra field if
+    /// present.
+    pub fn get_str(&self, field: &str) -> Option<&str> {
+        match field {
+            "key" => Some(self.key.as_str()),
+            "itemType" => Some(self.item_type.as_str()),
+            "title" => self.title.as_deref(),
+            "dateAdded" => self.date_added.as_deref(),
+            "dateModified" => self.date_modified.as_deref(),
+            _ => self.extra_fields.get(field).and_then(|v| v.as_str()),
+        }
+    }
+
+    /// Alias for [`get_str`].
+    pub fn get_field(&self, field: &str) -> Option<&str> {
+        self.get_str(field)
+    }
+
+    /// Dynamic field setter.
+    pub fn set_field<K: Into<String>, V: Into<serde_json::Value>>(
+        &mut self,
+        key: K,
+        value: V,
+    ) {
+        self.extra_fields.insert(key.into(), value.into());
+    }
+
+    pub fn abstract_note(&self) -> Option<&str> {
+        self.get_str("abstractNote")
+    }
+
+    pub fn publication_title(&self) -> Option<&str> {
+        self.get_str("publicationTitle")
+    }
+
+    pub fn volume(&self) -> Option<&str> {
+        self.get_str("volume")
+    }
+
+    pub fn issue(&self) -> Option<&str> {
+        self.get_str("issue")
+    }
+
+    pub fn pages(&self) -> Option<&str> {
+        self.get_str("pages")
+    }
+
+    pub fn date(&self) -> Option<&str> {
+        self.get_str("date")
+    }
+
+    pub fn publisher(&self) -> Option<&str> {
+        self.get_str("publisher")
+    }
+
+    pub fn institution(&self) -> Option<&str> {
+        self.get_str("institution")
+    }
+
+    pub fn doi(&self) -> Option<&str> {
+        self.get_str("doi")
+    }
+
+    pub fn citation_key(&self) -> Option<&str> {
+        self.get_str("citationKey")
+    }
+
+    pub fn isbn(&self) -> Option<&str> {
+        self.get_str("isbn")
+    }
+
+    pub fn issn(&self) -> Option<&str> {
+        self.get_str("issn")
+    }
+
+    pub fn url(&self) -> Option<&str> {
+        self.get_str("url")
+    }
+
+    pub fn extra(&self) -> Option<&str> {
+        self.get_str("extra")
+    }
+
+    pub fn note(&self) -> Option<&str> {
+        self.get_str("note")
+    }
+
+    pub fn parent_item(&self) -> Option<&str> {
+        self.get_str("parentItem")
+    }
+
+    pub fn annotation_type(&self) -> Option<&str> {
+        self.get_str("annotationType")
+    }
+
+    pub fn annotation_text(&self) -> Option<&str> {
+        self.get_str("annotationText")
+    }
+
+    pub fn annotation_comment(&self) -> Option<&str> {
+        self.get_str("annotationComment")
+    }
+
+    pub fn annotation_color(&self) -> Option<&str> {
+        self.get_str("annotationColor")
+    }
+
+    pub fn annotation_page_label(&self) -> Option<&str> {
+        self.get_str("annotationPageLabel")
+    }
+
+    pub fn content_type(&self) -> Option<&str> {
+        self.get_str("contentType")
+    }
+
+    pub fn filename(&self) -> Option<&str> {
+        self.get_str("filename")
+    }
+
+    pub fn path(&self) -> Option<&str> {
+        self.get_str("path")
+    }
+
+    /// Attachment storage mode (e.g. `imported_file`, `linked_file`).
+    pub fn link_mode(&self) -> Option<LinkMode> {
+        self.extra_fields
+            .get("linkMode")
+            .and_then(|v| v.as_str())
+            .map(|s| LinkMode::from(s.to_owned()))
+    }
 }
 
 /// An author, editor, or other creator credited on an item.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct ZoteroCreator {
+pub struct ZoteroCreator {
     /// Creator role (e.g. `"author"`, `"editor"`).
     #[serde(rename = "creatorType")]
-    pub(crate) creator_type: Option<CreatorType>,
+    pub creator_type: Option<CreatorType>,
     #[serde(rename = "firstName")]
-    pub(crate) first_name: Option<String>,
+    pub first_name: Option<String>,
     #[serde(rename = "lastName")]
-    pub(crate) last_name: Option<String>,
+    pub last_name: Option<String>,
     /// Single-field name for institutional or single-field creators.
-    pub(crate) name: Option<String>,
+    pub name: Option<String>,
 }
 
 /// A tag attached to an item.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct ZoteroTag {
-    pub(crate) tag: TagName,
+pub struct ZoteroTag {
+    pub tag: TagName,
     /// Tag origin: user-created vs. automatically assigned on import.
     #[serde(rename = "type", default)]
-    pub(crate) origin: TagOrigin,
+    pub origin: TagOrigin,
 }
-
 /// A Zotero collection as returned by the Local API.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ZoteroCollection {
@@ -280,7 +349,7 @@ mod tests {
                 item.data.title.as_deref(),
                 Some("Quantum Computing Advances")
             );
-            assert!(item.data.doi.is_none());
+            assert!(item.data.doi().is_none());
         }
 
         #[test]
@@ -290,7 +359,6 @@ mod tests {
                 "firstName": "Ada",
                 "lastName": "Lovelace"
             });
-
             let result = serde_json::from_value(raw_json);
             assert!(
                 result.is_ok(),
@@ -366,7 +434,7 @@ mod tests {
                 "item data JSON should deserialize: {result:?}"
             );
             let data: ZoteroItemData = result.expect("asserted Ok above");
-            assert_eq!(data.citation_key.as_deref(), Some("smith2020deep"));
+            assert_eq!(data.citation_key(), Some("smith2020deep"));
         }
 
         #[test]

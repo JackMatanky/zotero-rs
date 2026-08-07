@@ -31,9 +31,8 @@ use rmcp::{
         ProtocolVersion, ReadResourceResponse, ServerCapabilities,
     },
 };
-use zotero_api::AppState;
 
-use crate::catalog::is_tool_visible;
+use crate::{AppState, catalog::is_tool_visible};
 
 const SERVER_INSTRUCTIONS: &str =
     "Call zotero_discover first to find Zotero tools, resources, prompts, env \
@@ -208,10 +207,11 @@ impl ServerHandler for ZoteroMcpServer {
 #[cfg(test)]
 mod tests {
 
-    use zotero_api::AppState;
-
     use super::*;
-    use crate::catalog::{DiscoverArgs, is_write_tool};
+    use crate::{
+        catalog::{DiscoverArgs, is_write_tool},
+        state::AppState,
+    };
     mod server_handler {
         use pretty_assertions::assert_eq;
 

@@ -45,7 +45,7 @@ use rmcp::{
 };
 use schemars::JsonSchema;
 use serde::Deserialize;
-use zotero_api::{CollectionItemAction, CollectionKey, ItemKey, ZoteroClient};
+use zotero_api::{CollectionItemAction, CollectionKey, ItemKey};
 
 use crate::{
     ZoteroMcpServer,
@@ -241,7 +241,7 @@ impl ZoteroMcpServer {
         &self,
         args: GetCollectionItemsArgs,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let client = ZoteroClient::new(&self.state);
+        let client = self.state.zotero_client();
         let collection_key: CollectionKey = args.collection_key.into();
         Ok(json_result(client.get_collection_items(&collection_key).await))
     }
@@ -260,7 +260,7 @@ impl ZoteroMcpServer {
         &self,
         args: SearchCollectionsArgs,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let client = ZoteroClient::new(&self.state);
+        let client = self.state.zotero_client();
         Ok(json_result(client.search_collections(&args.query).await))
     }
 
@@ -278,7 +278,10 @@ impl ZoteroMcpServer {
         &self,
         args: CreateCollectionArgs,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let client = ZoteroClient::new(&self.state);
+        if let Err(e) = self.state.check_write_permission() {
+            return Ok(text_error(&e));
+        }
+        let client = self.state.zotero_client();
         Ok(json_result(
             client
                 .create_collection(
@@ -303,7 +306,10 @@ impl ZoteroMcpServer {
         &self,
         args: ManageCollectionsArgs,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let client = ZoteroClient::new(&self.state);
+        if let Err(e) = self.state.check_write_permission() {
+            return Ok(text_error(&e));
+        }
+        let client = self.state.zotero_client();
         let action = if args.remove.unwrap_or(false) {
             CollectionItemAction::Remove
         } else {
@@ -335,7 +341,10 @@ impl ZoteroMcpServer {
         &self,
         args: UpdateCollectionArgs,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let client = ZoteroClient::new(&self.state);
+        if let Err(e) = self.state.check_write_permission() {
+            return Ok(text_error(&e));
+        }
+        let client = self.state.zotero_client();
         Ok(json_result(
             client
                 .update_collection(
@@ -361,7 +370,10 @@ impl ZoteroMcpServer {
         &self,
         args: DeleteCollectionArgs,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let client = ZoteroClient::new(&self.state);
+        if let Err(e) = self.state.check_write_permission() {
+            return Ok(text_error(&e));
+        }
+        let client = self.state.zotero_client();
         let collection_key: CollectionKey = args.collection_key.into();
         match client.delete_collection(&collection_key).await {
             Ok(()) => Ok(text_success("Collection permanently deleted")),

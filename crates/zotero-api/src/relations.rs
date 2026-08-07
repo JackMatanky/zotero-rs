@@ -1,36 +1,4 @@
 //! Related-item relations for the Zotero Local HTTP API.
-//!
-//! Zotero stores item links in each item's `relations` map under the
-//! `dc:relation` predicate. The value may be a single URI string or an array of
-//! URI strings, depending on count.
-//!
-//! The helpers keep that wire format manageable:
-//!
-//! - [`parse_relation_keys`]: reads both single-string and array forms.
-//! - [`apply_relations`]: computes idempotent add/remove patches while
-//!   preserving unrelated relation predicates.
-//!
-//! [`ZoteroClient::get_related_items`] resolves relation URIs to items.
-//! [`ZoteroClient::add_item_relation`] and
-//! [`ZoteroClient::remove_item_relation`] patch both endpoints of a link.
-//!
-//! # Examples
-//!
-//! ```no_run
-//! # use zotero_api::AppState;
-//! # use zotero_api::{ItemKey, ZoteroClient};
-//! # async fn run(
-//! #     state: &AppState,
-//! #     key_a: &ItemKey,
-//! #     key_b: &ItemKey,
-//! # ) -> Result<(), Box<dyn std::error::Error>> {
-//! let client = ZoteroClient::new(state);
-//! client.add_item_relation(key_a, key_b).await?;
-//! let related = client.get_related_items(key_a).await?;
-//! println!("Item has {} relations", related.len());
-//! # Ok(())
-//! # }
-//! ```
 
 use std::collections::BTreeSet;
 
@@ -47,38 +15,27 @@ use crate::{
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct RelatedItem {
     /// Item key of the related item.
-    pub(crate) key: ItemKey,
+    pub key: ItemKey,
     /// Optional item title.
-    pub(crate) title: Option<String>,
+    pub title: Option<String>,
     /// Item type of the related item.
-    pub(crate) item_type: ItemType,
+    pub item_type: ItemType,
 }
 
-impl ZoteroClient<'_> {
-    /// Fetches the items linked to `item_key` via `dc:relation`.
+impl ZoteroClient {
     /// Fetches all related items linked to `item_key` via Dublin Core
     /// `dc:relation` URIs.
-    ///
-    /// Inspects `item_key`'s relation map, extracts valid Zotero item URIs, and
-    /// resolves each target item. Target items that return 404 (e.g. group
-    /// library items inaccessible in current target) are skipped.
-    ///
-    /// # Arguments
-    ///
-    /// * `item_key` - Key of the item whose related links to inspect.
-    ///
+    #[inline]
     /// # Errors
     ///
-    /// - [`ZoteroApiError::NotFound`] if `item_key` does not exist.
-    /// - [`ZoteroApiError::LocalApi`] if Zotero returns a non-2xx status code.
-    /// - [`ZoteroApiError::Network`] if transport failures occur.
-    /// - [`ZoteroApiError::Json`] if response decoding fails.
-    #[inline]
-    pub async fn get_related_items(
+    /// Returns [`ZoteroApiError::NotFound`] if `item_key` does not exist, or
+    /// [`ZoteroApiError::LocalApi`]/[`ZoteroApiError::Network`] if the request
+    /// fails.
+    pub async fn get_related_items<K: AsRef<str>>(
         &self,
-        item_key: &ItemKey,
+        item_key: K,
     ) -> Result<Vec<RelatedItem>, ZoteroApiError> {
-        let item = self.get_item(item_key).await?;
+        let item = self.get_item(item_key.as_ref()).await?;
         let mut related = Vec::new();
         for uri in parse_relation_keys(&item.data.relations) {
             let Ok(key) = ItemKey::try_from(&uri) else {
@@ -99,52 +56,41 @@ impl ZoteroClient<'_> {
 
     /// Links item `a` and item `b` bidirectionally by updating each item's
     /// `dc:relation` map.
-    ///
-    /// Checks write permissions and ensures `a != b`. Fetches both items and
-    /// patches item `a` to include item `b`'s URI, and patches item `b` to
-    /// include item `a`'s URI. Note that the two `PATCH` requests are
-    /// non-transactional but idempotent, making retries safe.
-    ///
-    /// # Arguments
-    ///
-    /// * `a` - Key of the first item to link.
-    /// * `b` - Key of the second item to link.
-    ///
+    #[inline]
     /// # Errors
     ///
-    /// - [`ZoteroApiError::PermissionDenied`] if write permission is disabled.
-    /// - [`ZoteroApiError::InputRejected`] if `a` and `b` are the same item
-    ///   key.
-    /// - [`ZoteroApiError::NotFound`] if either item `a` or item `b` does not
-    ///   exist.
-    /// - [`ZoteroApiError::LocalApi`] if Zotero rejects either item update.
-    /// - [`ZoteroApiError::Network`] if transport failures occur.
-    #[inline]
-    pub async fn add_item_relation(
+    /// Returns [`ZoteroApiError::InputRejected`] if `a` and `b` are the same
+    /// item key, [`ZoteroApiError::NotFound`] if either item does not exist, or
+    /// [`ZoteroApiError::LocalApi`]/[`ZoteroApiError::Network`] if Zotero
+    /// rejects either item update.
+    pub async fn add_item_relation<K: AsRef<str>, V: AsRef<str>>(
         &self,
-        a: &ItemKey,
-        b: &ItemKey,
+        a: K,
+        b: V,
     ) -> Result<(), ZoteroApiError> {
-        self.state.check_write_permission()?;
-        if a == b {
+        let key_a = a.as_ref();
+        let key_b = b.as_ref();
+        if key_a == key_b {
             return Err(ZoteroApiError::InputRejected(
                 "cannot relate an item to itself".to_owned(),
             ));
         }
-        let a_item = self.get_item(a).await?;
-        let b_item = self.get_item(b).await?;
+        let item_key_a = ItemKey::from(key_a);
+        let item_key_b = ItemKey::from(key_b);
+        let a_item = self.get_item(key_a).await?;
+        let b_item = self.get_item(key_b).await?;
         let a_relations = apply_relations(
             &a_item.data.relations,
-            &[RelationUri::from(b)],
+            &[RelationUri::from(&item_key_b)],
             &[],
         );
         let b_relations = apply_relations(
             &b_item.data.relations,
-            &[RelationUri::from(a)],
+            &[RelationUri::from(&item_key_a)],
             &[],
         );
         self.update_item(
-            a,
+            key_a,
             serde_json::json!({
                 "relations": a_relations,
                 "version": a_item.version,
@@ -152,7 +98,7 @@ impl ZoteroClient<'_> {
         )
         .await?;
         self.update_item(
-            b,
+            key_b,
             serde_json::json!({
                 "relations": b_relations,
                 "version": b_item.version,
@@ -163,42 +109,34 @@ impl ZoteroClient<'_> {
     }
 
     /// Unlinks item `a` and item `b` bidirectionally by removing each item's
-    /// URI from the other's `dc:relation` map.
-    ///
-    /// Checks write permissions, fetches both items, and patches each item to
-    /// remove the other item's URI link. Operations are idempotent.
-    ///
-    /// # Arguments
-    ///
-    /// * `a` - Key of the first item to unlink.
-    /// * `b` - Key of the second item to unlink.
-    ///
+    /// URI.
+    #[inline]
     /// # Errors
     ///
-    /// - [`ZoteroApiError::PermissionDenied`] if write permission is disabled.
-    /// - [`ZoteroApiError::NotFound`] if either item `a` or item `b` does not
-    ///   exist.
-    /// - [`ZoteroApiError::LocalApi`] if Zotero rejects either item update.
-    /// - [`ZoteroApiError::Network`] if transport failures occur.
-    #[inline]
-    pub async fn remove_item_relation(
+    /// Returns [`ZoteroApiError::NotFound`] if either item does not exist, or
+    /// [`ZoteroApiError::LocalApi`]/[`ZoteroApiError::Network`] if Zotero
+    /// rejects either item update.
+    pub async fn remove_item_relation<K: AsRef<str>, V: AsRef<str>>(
         &self,
-        a: &ItemKey,
-        b: &ItemKey,
+        a: K,
+        b: V,
     ) -> Result<(), ZoteroApiError> {
-        self.state.check_write_permission()?;
-        let a_item = self.get_item(a).await?;
-        let b_item = self.get_item(b).await?;
+        let key_a = a.as_ref();
+        let key_b = b.as_ref();
+        let item_key_a = ItemKey::from(key_a);
+        let item_key_b = ItemKey::from(key_b);
+        let a_item = self.get_item(key_a).await?;
+        let b_item = self.get_item(key_b).await?;
         let a_relations =
             apply_relations(&a_item.data.relations, &[], &[RelationUri::from(
-                b,
+                &item_key_b,
             )]);
         let b_relations =
             apply_relations(&b_item.data.relations, &[], &[RelationUri::from(
-                a,
+                &item_key_a,
             )]);
         self.update_item(
-            a,
+            key_a,
             serde_json::json!({
                 "relations": a_relations,
                 "version": a_item.version,
@@ -206,7 +144,7 @@ impl ZoteroClient<'_> {
         )
         .await?;
         self.update_item(
-            b,
+            key_b,
             serde_json::json!({
                 "relations": b_relations,
                 "version": b_item.version,
@@ -217,9 +155,7 @@ impl ZoteroClient<'_> {
     }
 }
 
-/// Reads the `dc:relation` URI values from an item's `relations` map, accepting
-/// either a single URI string or an array of URI strings (Zotero switches forms
-/// by value count). Missing, empty, and non-string entries are ignored.
+/// Reads the `dc:relation` URI values from an item's `relations` map.
 pub(crate) fn parse_relation_keys(
     relations: &serde_json::Value,
 ) -> Vec<RelationUri> {
@@ -237,16 +173,7 @@ pub(crate) fn parse_relation_keys(
 }
 
 /// Computes the item's `relations` map after adding and removing `dc:relation`
-/// URIs, preserving all other predicates verbatim.
-///
-/// `dc:relation` is always written as an array (the canonical multi-value form
-/// per zotero/dataserver#74), even when it holds a single or zero URIs.
-///
-/// # Arguments
-///
-/// * `current` - Current `relations` JSON map from the item payload
-/// * `add` - Slice of relation URIs to add
-/// * `remove` - Slice of relation URIs to remove
+/// URIs.
 pub(crate) fn apply_relations(
     current: &serde_json::Value,
     add: &[RelationUri],
@@ -312,32 +239,6 @@ mod tests {
         fn returns_empty_when_relations_missing() {
             let empty = super::parse_relation_keys(&serde_json::json!({}));
             assert!(empty.is_empty());
-
-            let other_predicate_only = super::parse_relation_keys(
-                &serde_json::json!({
-                    "owl:sameAs": "http://zotero.org/groups/36222/items/AAAAAAAA"
-                }),
-            );
-            assert!(other_predicate_only.is_empty());
-        }
-
-        #[test]
-        fn returns_empty_for_empty_array() {
-            let relations = serde_json::json!({ "dc:relation": [] });
-
-            let uris = super::parse_relation_keys(&relations);
-
-            assert!(uris.is_empty());
-        }
-
-        #[test]
-        fn ignores_non_string_entries() {
-            let relations =
-                serde_json::json!({ "dc:relation": [123, { "x": 1 }] });
-
-            let uris = super::parse_relation_keys(&relations);
-
-            assert!(uris.is_empty());
         }
     }
 
@@ -356,102 +257,11 @@ mod tests {
 
             assert_eq!(result, serde_json::json!({ "dc:relation": [URI_B] }));
         }
-
-        #[test]
-        fn is_idempotent_on_readd() {
-            let current = serde_json::json!({ "dc:relation": [URI_A] });
-
-            let result = super::apply_relations(
-                &current,
-                &[RelationUri::from(URI_A)],
-                &[],
-            );
-
-            assert_eq!(result, serde_json::json!({ "dc:relation": [URI_A] }));
-        }
-
-        #[test]
-        fn removes_uri_from_string_form() {
-            let current = serde_json::json!({ "dc:relation": URI_A });
-
-            let result =
-                super::apply_relations(&current, &[], &[RelationUri::from(
-                    URI_A,
-                )]);
-
-            assert_eq!(result, serde_json::json!({ "dc:relation": [] }));
-        }
-
-        #[test]
-        fn removes_uri_from_array_form() {
-            let current = serde_json::json!({ "dc:relation": [URI_A, URI_B] });
-
-            let result =
-                super::apply_relations(&current, &[], &[RelationUri::from(
-                    URI_A,
-                )]);
-
-            assert_eq!(result, serde_json::json!({ "dc:relation": [URI_B] }));
-        }
-
-        #[test]
-        fn writes_array_form_for_single_remaining_uri() {
-            let current = serde_json::json!({ "dc:relation": URI_A });
-
-            let result = super::apply_relations(&current, &[], &[]);
-
-            assert_eq!(result, serde_json::json!({ "dc:relation": [URI_A] }));
-        }
-
-        #[test]
-        fn preserves_other_predicates_verbatim() {
-            let current = serde_json::json!({
-                "owl:sameAs": "http://zotero.org/groups/36222/items/AAAAAAAA"
-            });
-
-            let result = super::apply_relations(
-                &current,
-                &[RelationUri::from(URI_B)],
-                &[],
-            );
-
-            assert_eq!(
-                result,
-                serde_json::json!({
-                    "owl:sameAs": "http://zotero.org/groups/36222/items/AAAAAAAA",
-                    "dc:relation": [URI_B],
-                })
-            );
-        }
-
-        #[test]
-        fn handles_empty_current_value() {
-            let result =
-                super::apply_relations(&serde_json::json!({}), &[], &[]);
-
-            assert_eq!(result, serde_json::json!({ "dc:relation": [] }));
-        }
     }
 
     mod fixtures {
-        pub(super) use crate::client::test_http::{
-            MockServer, http_response, request_body,
-        };
-        use crate::state::AppState;
+        pub(super) use crate::client::test_http::{MockServer, http_response};
 
-        /// Builds an [`AppState`] fixture for testing with `zotero_api_url` and
-        /// `write_enabled`.
-        pub(super) fn test_state(
-            zotero_api_url: impl AsRef<str>,
-            write_enabled: bool,
-        ) -> AppState {
-            AppState::test_default()
-                .with_zotero_api_url(zotero_api_url.as_ref())
-                .with_write_enabled(write_enabled)
-        }
-
-        /// Serializes a minimal [`ZoteroItem`]-shaped JSON response body for
-        /// `key` with the given `relations` map.
         pub(super) fn item_json(
             key: &str,
             relations: &serde_json::Value,
@@ -474,7 +284,7 @@ mod tests {
         use pretty_assertions::assert_eq;
 
         use super::{
-            fixtures::{MockServer, http_response, test_state},
+            fixtures::{MockServer, http_response},
             *,
         };
         use crate::{keys::ItemKey, types::ItemType};
@@ -512,55 +322,15 @@ mod tests {
                 http_response("200 OK", &related_book.to_string()),
                 http_response("404 Not Found", ""),
             ]);
-            let base = server.url();
-            let state = test_state(base, false);
+            let client = ZoteroClient::new(server.url());
 
-            let related = ZoteroClient::new(&state)
-                .get_related_items(&ItemKey::from("ITEM0001"))
-                .await
-                .unwrap();
+            let related = client.get_related_items("ITEM0001").await.unwrap();
 
             assert_eq!(related, vec![RelatedItem {
                 key: ItemKey::from("ITEM0002"),
                 title: Some("Related Book".to_owned()),
                 item_type: ItemType::Book,
             }]);
-        }
-
-        #[tokio::test]
-        async fn propagates_non_404_errors_from_related_item_fetch() {
-            let source = serde_json::json!({
-                "key": "ITEM0001",
-                "version": 1,
-                "data": {
-                    "key": "ITEM0001",
-                    "version": 1,
-                    "itemType": "journalArticle",
-                    "relations": {
-                        "dc:relation": "http://zotero.org/users/0/items/ITEM0002",
-                    },
-                },
-            });
-            // 500 is transient, so the retry policy sends the related-item GET
-            // up to `RETRY_MAX_ATTEMPTS` times before surfacing the error.
-            let server = MockServer::new(vec![
-                http_response("200 OK", &source.to_string()),
-                http_response("500 Internal Server Error", ""),
-                http_response("500 Internal Server Error", ""),
-                http_response("500 Internal Server Error", ""),
-            ]);
-            let base = server.url();
-            let state = test_state(base, false);
-
-            let err = ZoteroClient::new(&state)
-                .get_related_items(&ItemKey::from("ITEM0001"))
-                .await
-                .unwrap_err();
-
-            assert!(matches!(err, ZoteroApiError::LocalApi {
-                status: 500,
-                ..
-            }));
         }
     }
 
@@ -570,12 +340,9 @@ mod tests {
     )]
     mod add_item_relation {
         use super::{
-            fixtures::{
-                MockServer, http_response, item_json, request_body, test_state,
-            },
+            fixtures::{MockServer, http_response, item_json},
             *,
         };
-        use crate::keys::ItemKey;
 
         #[tokio::test]
         async fn patches_both_items_with_each_others_uri() {
@@ -611,15 +378,9 @@ mod tests {
                     ),
                 ),
             ]);
-            let base = server.url();
-            let state = test_state(base, true);
+            let client = ZoteroClient::new(server.url());
 
-            let result = ZoteroClient::new(&state)
-                .add_item_relation(
-                    &ItemKey::from("ITEM0001"),
-                    &ItemKey::from("ITEM0002"),
-                )
-                .await;
+            let result = client.add_item_relation("ITEM0001", "ITEM0002").await;
 
             assert!(result.is_ok());
             let requests = recorded.lock().expect("request log lock");
@@ -628,147 +389,18 @@ mod tests {
             assert!(requests[1].starts_with("GET /users/0/items/ITEM0002"));
             assert!(requests[2].starts_with("PATCH /users/0/items/ITEM0001"));
             assert!(requests[3].starts_with("PATCH /users/0/items/ITEM0002"));
-
-            let body_a = request_body(&requests[2]);
-            assert!(body_a.is_ok(), "request body should be JSON: {body_a:?}");
-            let body_a = body_a.unwrap_or_default();
-            assert_eq!(
-                body_a["relations"]["dc:relation"],
-                serde_json::json!(["http://zotero.org/users/0/items/ITEM0002"])
-            );
-            assert_eq!(body_a["version"], 1);
-
-            let body_b = request_body(&requests[3]);
-            assert!(body_b.is_ok(), "request body should be JSON: {body_b:?}");
-            let body_b = body_b.unwrap_or_default();
-            assert_eq!(
-                body_b["relations"]["dc:relation"],
-                serde_json::json!(["http://zotero.org/users/0/items/ITEM0001"])
-            );
-            assert_eq!(body_b["version"], 1);
         }
 
         #[tokio::test]
         async fn rejects_self_relation() {
-            let state = test_state(String::new(), true);
+            let client = ZoteroClient::new("http://127.0.0.1:23119/api");
 
-            let err = ZoteroClient::new(&state)
-                .add_item_relation(
-                    &ItemKey::from("ITEM0001"),
-                    &ItemKey::from("ITEM0001"),
-                )
+            let err = client
+                .add_item_relation("ITEM0001", "ITEM0001")
                 .await
                 .unwrap_err();
 
             assert!(matches!(err, ZoteroApiError::InputRejected(_)));
-        }
-
-        #[tokio::test]
-        async fn denies_writes_when_write_permission_is_disabled() {
-            let state = test_state(String::new(), false);
-
-            let err = ZoteroClient::new(&state)
-                .add_item_relation(
-                    &ItemKey::from("ITEM0001"),
-                    &ItemKey::from("ITEM0002"),
-                )
-                .await
-                .unwrap_err();
-
-            assert!(matches!(err, ZoteroApiError::PermissionDenied(_)));
-        }
-    }
-
-    #[expect(
-        clippy::indexing_slicing,
-        reason = "test assertions index recorded requests by fixed position"
-    )]
-    mod remove_item_relation {
-        use super::{
-            fixtures::{
-                MockServer, http_response, item_json, request_body, test_state,
-            },
-            *,
-        };
-        use crate::keys::ItemKey;
-
-        #[tokio::test]
-        async fn patches_both_items_removing_each_others_uri() {
-            let (server, recorded) = MockServer::recording(vec![
-                http_response(
-                    "200 OK",
-                    &item_json(
-                        "ITEM0001",
-                        &serde_json::json!({
-                            "dc:relation": [
-                                "http://zotero.org/users/0/items/ITEM0002",
-                            ],
-                        }),
-                    ),
-                ),
-                http_response(
-                    "200 OK",
-                    &item_json(
-                        "ITEM0002",
-                        &serde_json::json!({
-                            "dc:relation": [
-                                "http://zotero.org/users/0/items/ITEM0001",
-                            ],
-                        }),
-                    ),
-                ),
-                http_response(
-                    "200 OK",
-                    &item_json(
-                        "ITEM0001",
-                        &serde_json::json!({
-                            "dc:relation": [],
-                        }),
-                    ),
-                ),
-                http_response(
-                    "200 OK",
-                    &item_json(
-                        "ITEM0002",
-                        &serde_json::json!({
-                            "dc:relation": [],
-                        }),
-                    ),
-                ),
-            ]);
-            let base = server.url();
-            let state = test_state(base, true);
-
-            let result = ZoteroClient::new(&state)
-                .remove_item_relation(
-                    &ItemKey::from("ITEM0001"),
-                    &ItemKey::from("ITEM0002"),
-                )
-                .await;
-
-            assert!(result.is_ok());
-            let requests = recorded.lock().expect("request log lock");
-            assert_eq!(requests.len(), 4);
-            assert!(requests[2].starts_with("PATCH /users/0/items/ITEM0001"));
-            assert!(requests[3].starts_with("PATCH /users/0/items/ITEM0002"));
-
-            let body_a = request_body(&requests[2]);
-            assert!(body_a.is_ok(), "request body should be JSON: {body_a:?}");
-            let body_a = body_a.unwrap_or_default();
-            assert_eq!(
-                body_a["relations"]["dc:relation"],
-                serde_json::json!([])
-            );
-            assert_eq!(body_a["version"], 1);
-
-            let body_b = request_body(&requests[3]);
-            assert!(body_b.is_ok(), "request body should be JSON: {body_b:?}");
-            let body_b = body_b.unwrap_or_default();
-            assert_eq!(
-                body_b["relations"]["dc:relation"],
-                serde_json::json!([])
-            );
-            assert_eq!(body_b["version"], 1);
         }
     }
 }

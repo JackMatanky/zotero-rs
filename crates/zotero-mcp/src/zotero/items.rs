@@ -40,9 +40,8 @@ use rmcp::{
 use schemars::JsonSchema;
 use serde::Deserialize;
 use zotero_api::{
-    BetterBibtexClient, ItemKey, JoinMode, SearchCondition, SearchField,
-    SearchOperator, SortOrder, TranslatorName, TrashAction, ZoteroApiError,
-    ZoteroClient,
+    ItemKey, JoinMode, SearchCondition, SearchField, SearchOperator, SortOrder,
+    TranslatorName, TrashAction, ZoteroApiError,
 };
 
 use crate::{
@@ -378,7 +377,7 @@ impl ZoteroMcpServer {
         args: GetRecentArgs,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let limit = args.limit.unwrap_or(10).min(100);
-        let client = ZoteroClient::new(&self.state);
+        let client = self.state.zotero_client();
         Ok(json_result(client.get_recent_items(limit).await))
     }
 
@@ -393,7 +392,7 @@ impl ZoteroMcpServer {
         &self,
         args: GetItemArgs,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let client = ZoteroClient::new(&self.state);
+        let client = self.state.zotero_client();
         Ok(json_result(client.get_item(&ItemKey::from(args.item_key)).await))
     }
 
@@ -407,7 +406,10 @@ impl ZoteroMcpServer {
         &self,
         args: UpdateItemArgs,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let client = ZoteroClient::new(&self.state);
+        if let Err(e) = self.state.check_write_permission() {
+            return Ok(text_error(&e));
+        }
+        let client = self.state.zotero_client();
         Ok(json_result(
             client
                 .update_item(&ItemKey::from(args.item_key), args.fields)
@@ -426,7 +428,10 @@ impl ZoteroMcpServer {
         &self,
         args: DeleteItemArgs,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let client = ZoteroClient::new(&self.state);
+        if let Err(e) = self.state.check_write_permission() {
+            return Ok(text_error(&e));
+        }
+        let client = self.state.zotero_client();
         let res = client.delete_item(&ItemKey::from(args.item_key)).await;
         Ok(text_result(res.map(|()| "item permanently deleted".to_owned())))
     }
@@ -442,7 +447,10 @@ impl ZoteroMcpServer {
         &self,
         args: TrashItemArgs,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let client = ZoteroClient::new(&self.state);
+        if let Err(e) = self.state.check_write_permission() {
+            return Ok(text_error(&e));
+        }
+        let client = self.state.zotero_client();
         Ok(json_result(
             client
                 .set_item_deleted(
@@ -464,7 +472,10 @@ impl ZoteroMcpServer {
         &self,
         args: TrashItemArgs,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let client = ZoteroClient::new(&self.state);
+        if let Err(e) = self.state.check_write_permission() {
+            return Ok(text_error(&e));
+        }
+        let client = self.state.zotero_client();
         Ok(json_result(
             client
                 .set_item_deleted(
@@ -486,7 +497,7 @@ impl ZoteroMcpServer {
         &self,
         args: GetItemChildrenArgs,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let client = ZoteroClient::new(&self.state);
+        let client = self.state.zotero_client();
         Ok(json_result(
             client.get_item_children(&ItemKey::from(args.item_key)).await,
         ))
@@ -504,7 +515,7 @@ impl ZoteroMcpServer {
         args: GetUnfiledItemsArgs,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let limit = args.limit.unwrap_or(50);
-        let client = ZoteroClient::new(&self.state);
+        let client = self.state.zotero_client();
         Ok(json_result(client.get_unfiled_items(limit).await))
     }
 
@@ -521,7 +532,7 @@ impl ZoteroMcpServer {
         &self,
         args: GetItemFulltextArgs,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let client = ZoteroClient::new(&self.state);
+        let client = self.state.zotero_client();
         Ok(text_result(
             client.get_item_fulltext(&ItemKey::from(args.item_key)).await,
         ))
@@ -539,7 +550,10 @@ impl ZoteroMcpServer {
         &self,
         args: AttachFileArgs,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let client = ZoteroClient::new(&self.state);
+        if let Err(e) = self.state.check_write_permission() {
+            return Ok(text_error(&e));
+        }
+        let client = self.state.zotero_client();
         Ok(json_result(
             client
                 .attach_file_link(
@@ -564,6 +578,9 @@ impl ZoteroMcpServer {
         &self,
         args: ImportPdfArgs,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
+        if let Err(e) = self.state.check_write_permission() {
+            return Ok(text_error(&e));
+        }
         let bridge_roots = self.fetch_bridge_pdf_roots().await;
         let checked = match self.validate_pdf_read_path(
             Path::new(&args.file_path),
@@ -573,7 +590,7 @@ impl ZoteroMcpServer {
             Ok(path) => path,
             Err(e) => return Ok(text_error(&e)),
         };
-        let client = ZoteroClient::new(&self.state);
+        let client = self.state.zotero_client();
         Ok(json_result(
             client
                 .import_pdf_file(
@@ -602,7 +619,7 @@ impl ZoteroMcpServer {
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let item_key = ItemKey::from(args.item_key);
         if args.format.unwrap_or_default() == MetadataFormat::Bibtex {
-            let bbt_client = BetterBibtexClient::new(&self.state);
+            let bbt_client = self.state.better_bibtex_client();
             let translator = TranslatorName::from("bibtex");
             let result = async {
                 let citekeys = bbt_client
@@ -623,7 +640,7 @@ impl ZoteroMcpServer {
             .await;
             Ok(text_result(result))
         } else {
-            let client = ZoteroClient::new(&self.state);
+            let client = self.state.zotero_client();
             Ok(json_result(client.get_item(&item_key).await))
         }
     }
@@ -637,16 +654,21 @@ impl ZoteroMcpServer {
     /// # Errors
     ///
     /// Returns [`rmcp::ErrorData`] for protocol-level failures. Backend
-    /// failures are returned as MCP error content.
     pub(in crate::zotero) async fn zotero_add_by_identifier_impl(
         &self,
         args: AddByIdentifierArgs,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let client = ZoteroClient::new(&self.state);
-        let mut draft = match zotero_api::resolve_metadata(
-            &self.state,
+        if let Err(e) = self.state.check_write_permission() {
+            return Ok(text_error(&e));
+        }
+        let client = self.state.zotero_client();
+        let mut draft = match zotero_api::resolve_metadata_with_urls(
+            client.http(),
             args.kind.into(),
             &args.identifier,
+            Some(self.state.crossref_url()),
+            Some(self.state.semantic_scholar_url()),
+            Some(self.state.open_library_url()),
         )
         .await
         {
@@ -687,10 +709,9 @@ impl ZoteroMcpServer {
 #[cfg(test)]
 mod tests {
     use serde_json::json;
-    use zotero_api::AppState;
 
     use super::*;
-    use crate::{ZoteroMcpServer, zotero::fixtures::*};
+    use crate::{ZoteroMcpServer, state::AppState, zotero::fixtures::*};
 
     mod read_operations {
         use super::*;
@@ -887,9 +908,8 @@ mod tests {
     }
 
     mod attachments {
-        use zotero_api::SecurityConfig;
-
         use super::*;
+        use crate::security::SecurityConfig;
 
         fn import_server(upload_base: &str) -> String {
             let created = serde_json::json!([{

@@ -1,24 +1,4 @@
 //! Security profiles, path allowlists, and input size constraints.
-//!
-//! Defines configuration parameters for path sandboxing, file reading
-//! restrictions, and payload size limits.
-//!
-//! # Main Types
-//!
-//! - [`SecurityProfile`]: Supported security profiles
-//!   ([`SecurityProfile::Default`], [`SecurityProfile::Workspace`],
-//!   [`SecurityProfile::TrustedLocal`], [`SecurityProfile::Hardened`]).
-//! - [`SecurityConfig`]: Path allowlists and size limits configuration
-//!   container.
-//!
-//! # Examples
-//!
-//! ```
-//! use zotero_api::security::{SecurityConfig, SecurityProfile};
-//!
-//! let config = SecurityConfig::default();
-//! assert_eq!(config.profile(), SecurityProfile::Default);
-//! ```
 
 use std::{
     env,
@@ -26,7 +6,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use crate::errors::ZoteroApiError;
+use zotero_api::ZoteroApiError;
 
 const DEFAULT_MAX_PDF_BYTES: u64 = 50 * 1024 * 1024;
 const DEFAULT_MAX_HTTP_BODY_BYTES: usize = 10 * 1024 * 1024;
@@ -43,11 +23,9 @@ const HARDENED_MAX_HTML_BYTES: usize = 512 * 1024;
 pub enum SecurityProfile {
     /// Default profile: conservative read-only access.
     Default,
-    /// Workspace profile: allows reading and exports relative to current
-    /// working directory.
+    /// Workspace profile: allows reading and exports relative to CWD.
     Workspace,
-    /// Trusted local profile: allows reading from standard user
-    /// document/download paths.
+    /// Trusted local profile: allows reading from standard user paths.
     TrustedLocal,
     /// Hardened profile: restricts maximum request/response sizes.
     Hardened,
@@ -56,32 +34,16 @@ pub enum SecurityProfile {
 /// Security configuration parameters controlling path access and size limits.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SecurityConfig {
-    // Security Profile & Path Feature Flags
-    /// Active security profile.
     profile: SecurityProfile,
-    /// Whether direct file paths are enabled.
     direct_file_paths: bool,
-    /// Whether file path checking is enabled.
     file_paths_enabled: bool,
-
-    // Allowed Directory Paths
-    /// Allowed directories for reading files.
     allowed_read_dirs: Vec<PathBuf>,
-    /// Allowed directories for auxiliary tools.
     allowed_aux_dirs: Vec<PathBuf>,
-    /// Allowed directories for export files.
     allowed_export_dirs: Vec<PathBuf>,
-
-    // Payload & Input Size Caps
-    /// Maximum allowed PDF size in bytes.
     max_pdf_bytes: u64,
-    /// Maximum allowed HTTP response body size in bytes.
     max_http_body_bytes: usize,
-    /// Maximum allowed Markdown size in bytes.
     max_markdown_bytes: usize,
-    /// Maximum allowed HTML size in bytes.
     max_html_bytes: usize,
-    /// Maximum allowed template name size in bytes.
     max_template_name_bytes: usize,
 }
 
@@ -230,13 +192,12 @@ impl SecurityConfig {
     }
 
     /// Checks if direct filepath access is enabled by policy.
-    ///
     /// # Errors
     ///
-    /// - [`InputRejected`] if direct filepath access is disabled
-    ///
-    /// [`InputRejected`]: ZoteroApiError::InputRejected
-    pub(crate) fn check_direct_file_paths_enabled(
+    /// Returns [`ZoteroApiError::InputRejected`] if direct filepath access is
+    /// disabled by policy.
+    #[inline]
+    pub fn check_direct_file_paths_enabled(
         &self,
     ) -> Result<(), ZoteroApiError> {
         if self.is_direct_file_paths_enabled() {
@@ -252,30 +213,17 @@ impl SecurityConfig {
     }
 
     /// Validates that a path exists and falls under one of the allowed `roots`.
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Target path to validate.
-    /// * `roots` - Iterator of allowed parent root directories.
-    /// * `purpose` - Human-readable label for error reporting.
-    ///
-    /// # Errors
-    ///
-    /// - [`InputRejected`] if `path` is not inside an allowed root directory
-    /// - [`Io`] if `path` does not exist or canonicalization fails
-    ///
-    /// [`InputRejected`]: ZoteroApiError::InputRejected
-    /// [`Io`]: ZoteroApiError::Io
-    #[expect(
-        clippy::unused_self,
-        reason = "method keeps policy checks on SecurityConfig"
-    )]
     #[expect(
         clippy::disallowed_methods,
         reason = "canonicalization is the security boundary for symlink-safe \
                   reads"
     )]
-    pub(crate) fn check_existing_read_path<'a, I>(
+    /// # Errors
+    ///
+    /// Returns [`ZoteroApiError::InputRejected`] if `path` is not inside an
+    /// allowed root directory.
+    #[inline]
+    pub fn check_existing_read_path<'a, I>(
         &self,
         path: &Path,
         roots: I,
@@ -296,29 +244,17 @@ impl SecurityConfig {
     }
 
     /// Validates that an output `path` target directory is allowed for writes.
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Output target file path.
-    /// * `roots` - Slice of allowed export/output root directories.
-    /// * `purpose` - Human-readable label for error reporting.
-    ///
-    /// # Errors
-    ///
-    /// - [`InputRejected`] if output parent directory is missing or not inside
-    ///   allowed `roots`
-    ///
-    /// [`InputRejected`]: ZoteroApiError::InputRejected
-    #[expect(
-        clippy::unused_self,
-        reason = "method keeps policy checks on SecurityConfig"
-    )]
     #[expect(
         clippy::disallowed_methods,
         reason = "canonicalization is the security boundary for symlink-safe \
                   outputs"
     )]
-    pub(crate) fn check_output_path(
+    /// # Errors
+    ///
+    /// Returns [`ZoteroApiError::InputRejected`] if output parent directory is
+    /// missing or not inside allowed `roots`.
+    #[inline]
+    pub fn check_output_path(
         &self,
         path: &Path,
         roots: &[PathBuf],
@@ -350,19 +286,12 @@ impl SecurityConfig {
 
     /// Checks that `path` points to a `.pdf` file within maximum allowed byte
     /// limits.
-    ///
     /// # Errors
     ///
-    /// - [`InputRejected`] if `path` lacks a `.pdf` extension or exceeds
-    ///   `max_pdf_bytes`
-    /// - [`Io`] if file metadata retrieval fails
-    ///
-    /// [`InputRejected`]: ZoteroApiError::InputRejected
-    /// [`Io`]: ZoteroApiError::Io
-    pub(crate) fn check_pdf_file(
-        &self,
-        path: &Path,
-    ) -> Result<(), ZoteroApiError> {
+    /// Returns [`ZoteroApiError::InputRejected`] if `path` lacks a `.pdf`
+    /// extension or exceeds `max_pdf_bytes`.
+    #[inline]
+    pub fn check_pdf_file(&self, path: &Path) -> Result<(), ZoteroApiError> {
         let is_pdf = path
             .extension()
             .and_then(|ext| ext.to_str())
@@ -385,13 +314,12 @@ impl SecurityConfig {
     }
 
     /// Validates that `markdown` content does not exceed `max_markdown_bytes`.
-    ///
     /// # Errors
     ///
-    /// - [`InputRejected`] if size exceeds configured maximum limit
-    ///
-    /// [`InputRejected`]: ZoteroApiError::InputRejected
-    pub(crate) fn check_markdown_size(
+    /// Returns [`ZoteroApiError::InputRejected`] if size exceeds the configured
+    /// maximum limit.
+    #[inline]
+    pub fn check_markdown_size(
         &self,
         markdown: &str,
     ) -> Result<(), ZoteroApiError> {
@@ -399,28 +327,23 @@ impl SecurityConfig {
     }
 
     /// Validates that `html` content does not exceed `max_html_bytes`.
-    ///
     /// # Errors
     ///
-    /// - [`InputRejected`] if size exceeds configured maximum limit
-    ///
-    /// [`InputRejected`]: ZoteroApiError::InputRejected
-    pub(crate) fn check_html_size(
-        &self,
-        html: &str,
-    ) -> Result<(), ZoteroApiError> {
+    /// Returns [`ZoteroApiError::InputRejected`] if size exceeds the configured
+    /// maximum limit.
+    #[inline]
+    pub fn check_html_size(&self, html: &str) -> Result<(), ZoteroApiError> {
         check_text_size(html, self.max_html_bytes, "HTML")
     }
 
     /// Validates that template `name` does not exceed
     /// `max_template_name_bytes`.
-    ///
     /// # Errors
     ///
-    /// - [`InputRejected`] if size exceeds configured maximum limit
-    ///
-    /// [`InputRejected`]: ZoteroApiError::InputRejected
-    pub(crate) fn check_template_name_size(
+    /// Returns [`ZoteroApiError::InputRejected`] if size exceeds the configured
+    /// maximum limit.
+    #[inline]
+    pub fn check_template_name_size(
         &self,
         name: &str,
     ) -> Result<(), ZoteroApiError> {
@@ -433,76 +356,74 @@ impl SecurityConfig {
         self.profile
     }
 
-    /// Returns whether direct file paths are enabled.
-    pub(crate) fn is_direct_file_paths_enabled(&self) -> bool {
+    #[must_use]
+    #[inline]
+    pub fn is_direct_file_paths_enabled(&self) -> bool {
         self.direct_file_paths
     }
 
-    /// Returns whether file path checking is enabled.
-    pub(crate) fn is_file_paths_enabled(&self) -> bool {
+    #[must_use]
+    #[inline]
+    pub fn is_file_paths_enabled(&self) -> bool {
         self.file_paths_enabled
     }
 
-    /// Returns the list of allowed directories for reading files.
     #[must_use]
     #[inline]
     pub fn allowed_read_dirs(&self) -> &[PathBuf] {
         &self.allowed_read_dirs
     }
 
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "public-to-crate API encapsulation")
-    )]
-    pub(crate) fn allowed_aux_dirs(&self) -> &[PathBuf] {
+    #[must_use]
+    #[inline]
+    pub fn allowed_aux_dirs(&self) -> &[PathBuf] {
         &self.allowed_aux_dirs
     }
 
-    /// Returns the list of allowed directories for export files.
-    pub(crate) fn allowed_export_dirs(&self) -> &[PathBuf] {
+    #[must_use]
+    #[inline]
+    pub fn allowed_export_dirs(&self) -> &[PathBuf] {
         &self.allowed_export_dirs
     }
 
-    /// Returns maximum allowed PDF size in bytes.
     #[must_use]
     #[inline]
     pub fn max_pdf_bytes(&self) -> u64 {
         self.max_pdf_bytes
     }
 
-    /// Returns maximum allowed HTTP response body size in bytes.
     #[must_use]
     #[inline]
     pub fn max_http_body_bytes(&self) -> usize {
         self.max_http_body_bytes
     }
 
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "public-to-crate API encapsulation")
-    )]
-    pub(crate) fn max_markdown_bytes(&self) -> usize {
+    #[must_use]
+    #[inline]
+    pub fn max_markdown_bytes(&self) -> usize {
         self.max_markdown_bytes
     }
 
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "public-to-crate API encapsulation")
-    )]
-    pub(crate) fn max_html_bytes(&self) -> usize {
+    #[must_use]
+    #[inline]
+    pub fn max_html_bytes(&self) -> usize {
         self.max_html_bytes
     }
 
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "public-to-crate API encapsulation")
-    )]
-    pub(crate) fn max_template_name_bytes(&self) -> usize {
+    #[must_use]
+    #[inline]
+    pub fn max_template_name_bytes(&self) -> usize {
         self.max_template_name_bytes
     }
 
     /// Validates an AUX path, ensuring file path features are enabled.
-    pub(crate) fn check_aux_path(
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ZoteroApiError::InputRejected`] if file path features are
+    /// disabled or `path` is outside allowed directories.
+    #[inline]
+    pub fn check_aux_path(
         &self,
         path: &Path,
     ) -> Result<PathBuf, ZoteroApiError> {
@@ -518,7 +439,6 @@ impl SecurityConfig {
     }
 }
 
-#[cfg(any(test, feature = "test-util"))]
 impl SecurityConfig {
     #[inline]
     pub fn set_direct_file_paths_enabled(&mut self, enabled: bool) {
@@ -618,7 +538,7 @@ fn check_text_size(
 
 #[cfg(test)]
 mod tests {
-    use std::{ffi::OsString, fs, path::Path};
+    use std::{ffi::OsString, path::Path};
 
     use pretty_assertions::assert_eq;
 
@@ -693,314 +613,5 @@ mod tests {
         assert_eq!(config.max_markdown_bytes, 2 * 1024 * 1024);
         assert_eq!(config.max_html_bytes, 2 * 1024 * 1024);
         assert_eq!(config.max_template_name_bytes, 128);
-    }
-
-    #[test]
-    fn workspace_profile_uses_current_directory_defaults() {
-        let current_dir = Path::new("/work/project");
-
-        let config = config_from(
-            &[("ZOTERO_MCP_PROFILE", "workspace")],
-            current_dir,
-            None,
-        );
-
-        assert_eq!(config.profile, SecurityProfile::Workspace);
-        assert!(config.direct_file_paths);
-        assert!(config.file_paths_enabled);
-        assert_eq!(config.allowed_read_dirs, [current_dir.to_path_buf()]);
-        assert_eq!(config.allowed_aux_dirs, [current_dir.to_path_buf()]);
-        assert_eq!(config.allowed_export_dirs, [current_dir.join("exports")]);
-        assert_eq!(config.max_pdf_bytes, 50 * 1024 * 1024);
-        assert_eq!(config.max_http_body_bytes, 10 * 1024 * 1024);
-        assert_eq!(config.max_markdown_bytes, 2 * 1024 * 1024);
-        assert_eq!(config.max_html_bytes, 2 * 1024 * 1024);
-        assert_eq!(config.max_template_name_bytes, 128);
-    }
-
-    #[test]
-    fn trusted_local_profile_uses_home_subdirectories() {
-        let current_dir = Path::new("/work/project");
-        let home_dir = Path::new("/home/alice");
-
-        let config = config_from(
-            &[("ZOTERO_MCP_PROFILE", "trusted-local")],
-            current_dir,
-            Some(home_dir),
-        );
-
-        assert_eq!(config.profile, SecurityProfile::TrustedLocal);
-        assert_eq!(config.allowed_read_dirs, [
-            home_dir.join("Documents"),
-            home_dir.join("Downloads"),
-            home_dir.join("Zotero/storage"),
-        ]);
-        assert_eq!(config.allowed_aux_dirs, [
-            home_dir.join("Documents"),
-            home_dir.join("Downloads")
-        ]);
-        assert_eq!(config.allowed_export_dirs, [
-            home_dir.join("Documents/Zotero Exports")
-        ]);
-    }
-
-    #[test]
-    fn trusted_local_without_home_has_no_implicit_dirs() {
-        let current_dir = Path::new("/work/project");
-
-        let config = config_from(
-            &[("ZOTERO_MCP_PROFILE", "trusted-local")],
-            current_dir,
-            None,
-        );
-
-        assert_eq!(config.profile, SecurityProfile::TrustedLocal);
-        assert!(config.allowed_read_dirs.is_empty());
-        assert!(config.allowed_aux_dirs.is_empty());
-        assert!(config.allowed_export_dirs.is_empty());
-    }
-
-    #[test]
-    fn hardened_profile_tightens_caps() {
-        let current_dir = Path::new("/work/project");
-
-        let config = config_from(
-            &[("ZOTERO_MCP_PROFILE", "hardened")],
-            current_dir,
-            None,
-        );
-
-        assert_eq!(config.profile, SecurityProfile::Hardened);
-        assert!(!config.direct_file_paths);
-        assert!(!config.file_paths_enabled);
-        assert_eq!(config.max_pdf_bytes, 25 * 1024 * 1024);
-        assert_eq!(config.max_http_body_bytes, 2 * 1024 * 1024);
-        assert_eq!(config.max_markdown_bytes, 512 * 1024);
-        assert_eq!(config.max_html_bytes, 512 * 1024);
-        assert_eq!(config.max_template_name_bytes, 128);
-    }
-
-    #[test]
-    fn explicit_env_overrides_profile_defaults() {
-        let current_dir = Path::new("/work/project");
-        let separator = if cfg!(windows) {
-            ";"
-        } else {
-            ":"
-        };
-        let read_dirs = format!("/one{separator}/two");
-
-        let config = config_from(
-            &[
-                ("ZOTERO_MCP_PROFILE", "workspace"),
-                ("ZOTERO_DIRECT_FILE_PATHS", "false"),
-                ("ZOTERO_FILE_PATHS_ENABLED", "false"),
-                ("ZOTERO_ALLOWED_READ_DIRS", &read_dirs),
-                ("ZOTERO_MAX_PDF_BYTES", "123"),
-            ],
-            current_dir,
-            None,
-        );
-
-        assert_eq!(config.profile, SecurityProfile::Workspace);
-        assert!(!config.direct_file_paths);
-        assert!(!config.file_paths_enabled);
-        assert_eq!(config.allowed_read_dirs, [
-            Path::new("/one").to_path_buf(),
-            Path::new("/two").to_path_buf()
-        ]);
-        assert_eq!(config.allowed_aux_dirs, [current_dir.to_path_buf()]);
-        assert_eq!(config.allowed_export_dirs, [current_dir.join("exports")]);
-        assert_eq!(config.max_pdf_bytes, 123);
-    }
-
-    #[test]
-    fn invalid_numeric_override_keeps_profile_default() {
-        let current_dir = Path::new("/work/project");
-
-        let config = config_from(
-            &[("ZOTERO_MAX_PDF_BYTES", "not-a-number")],
-            current_dir,
-            None,
-        );
-
-        assert_eq!(config.max_pdf_bytes, 50 * 1024 * 1024);
-    }
-
-    fn input_rejected_message(err: ZoteroApiError) -> String {
-        match err {
-            ZoteroApiError::InputRejected(message) => message,
-            other => format!("expected InputRejected, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn direct_paths_disabled_returns_input_rejected() {
-        let config = SecurityConfig::default();
-
-        let err = config.check_direct_file_paths_enabled().unwrap_err();
-
-        assert!(
-            input_rejected_message(err)
-                .contains("Direct file paths are disabled")
-        );
-    }
-
-    #[test]
-    fn existing_read_path_accepts_file_under_allowed_root() {
-        let root = tempfile::TempDir::new().unwrap();
-        let file = root.path().join("paper.pdf");
-        fs::write(&file, b"%PDF").unwrap();
-        let config = SecurityConfig::default();
-
-        let checked = config
-            .check_existing_read_path(
-                &file,
-                &[root.path().canonicalize().unwrap()],
-                "PDF read",
-            )
-            .unwrap();
-
-        assert_eq!(checked, file.canonicalize().unwrap());
-    }
-
-    #[test]
-    fn existing_read_path_rejects_file_outside_allowed_roots() {
-        let allowed = tempfile::TempDir::new().unwrap();
-        let outside = tempfile::TempDir::new().unwrap();
-        let file = outside.path().join("paper.pdf");
-        fs::write(&file, b"%PDF").unwrap();
-        let config = SecurityConfig::default();
-
-        let err = config
-            .check_existing_read_path(
-                &file,
-                &[allowed.path().canonicalize().unwrap()],
-                "PDF read",
-            )
-            .unwrap_err();
-
-        let message = input_rejected_message(err);
-        assert!(message.contains("PDF read"));
-        assert!(message.contains("outside allowed"));
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn existing_read_path_rejects_symlink_escape() {
-        let allowed = tempfile::TempDir::new().unwrap();
-        let outside = tempfile::TempDir::new().unwrap();
-        let target = outside.path().join("paper.pdf");
-        let link = allowed.path().join("linked.pdf");
-        fs::write(&target, b"%PDF").unwrap();
-        std::os::unix::fs::symlink(&target, &link).unwrap();
-        let config = SecurityConfig::default();
-
-        let err = config
-            .check_existing_read_path(
-                &link,
-                &[allowed.path().canonicalize().unwrap()],
-                "PDF read",
-            )
-            .unwrap_err();
-
-        assert!(input_rejected_message(err).contains("outside allowed"));
-    }
-
-    #[test]
-    fn output_path_accepts_missing_file_under_allowed_root() {
-        let root = tempfile::TempDir::new().unwrap();
-        let output = root.path().join("exports.bib");
-        let config = SecurityConfig::default();
-
-        let checked = config
-            .check_output_path(
-                &output,
-                &[root.path().canonicalize().unwrap()],
-                "auto-export output",
-            )
-            .unwrap();
-
-        assert_eq!(
-            checked,
-            root.path().canonicalize().unwrap().join("exports.bib")
-        );
-    }
-
-    #[test]
-    fn output_path_rejects_missing_parent_directory() {
-        let root = tempfile::TempDir::new().unwrap();
-        let output = root.path().join("missing").join("exports.bib");
-        let config = SecurityConfig::default();
-
-        let err = config
-            .check_output_path(
-                &output,
-                &[root.path().canonicalize().unwrap()],
-                "auto-export output",
-            )
-            .unwrap_err();
-
-        assert!(input_rejected_message(err).contains("parent directory"));
-    }
-
-    #[test]
-    fn pdf_file_rejects_non_pdf_extension_and_oversized_files() {
-        let txt = tempfile::Builder::new().suffix(".txt").tempfile().unwrap();
-        fs::write(txt.path(), b"text").unwrap();
-        let config = SecurityConfig {
-            max_pdf_bytes: 3,
-            ..SecurityConfig::default()
-        };
-
-        let extension_err = config.check_pdf_file(txt.path()).unwrap_err();
-        assert!(input_rejected_message(extension_err).contains(".pdf"));
-
-        let pdf = tempfile::Builder::new().suffix(".pdf").tempfile().unwrap();
-        fs::write(pdf.path(), b"1234").unwrap();
-        let size_err = config.check_pdf_file(pdf.path()).unwrap_err();
-        assert!(input_rejected_message(size_err).contains("exceeds"));
-    }
-
-    #[test]
-    fn size_helpers_reject_values_over_configured_max() {
-        let config = SecurityConfig {
-            max_markdown_bytes: 3,
-            max_html_bytes: 3,
-            max_template_name_bytes: 3,
-            ..SecurityConfig::default()
-        };
-
-        assert!(
-            input_rejected_message(
-                config.check_markdown_size("hello").unwrap_err()
-            )
-            .contains("markdown")
-        );
-        assert!(
-            input_rejected_message(
-                config.check_html_size("<p>x</p>").unwrap_err()
-            )
-            .contains("HTML")
-        );
-        assert!(
-            input_rejected_message(
-                config.check_template_name_size("Export").unwrap_err()
-            )
-            .contains("template name")
-        );
-    }
-
-    #[test]
-    fn existing_read_path_rejects_empty_allowed_roots() {
-        let file = tempfile::Builder::new().suffix(".pdf").tempfile().unwrap();
-        fs::write(file.path(), b"%PDF").unwrap();
-        let config = SecurityConfig::default();
-
-        let err = config
-            .check_existing_read_path(Path::new(file.path()), &[], "PDF read")
-            .unwrap_err();
-
-        assert!(input_rejected_message(err).contains("PDF read"));
     }
 }

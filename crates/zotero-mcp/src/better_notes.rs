@@ -32,7 +32,7 @@ use rmcp::{
 };
 use schemars::JsonSchema;
 use serde::Deserialize;
-use zotero_api::{BetterNotesClient, ItemKey, TemplateName};
+use zotero_api::{ItemKey, TemplateName};
 
 use crate::ZoteroMcpServer;
 
@@ -112,15 +112,18 @@ impl ZoteroMcpServer {
         &self,
         args: NoteExportArgs,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let client = BetterNotesClient::new(&self.state);
-        Ok(crate::response::text_result(
-            client
-                .export(
-                    &ItemKey::from(args.item_key),
-                    args.format.map(Into::into),
-                )
-                .await,
-        ))
+        let format = args.format.map(Into::into).unwrap_or_default();
+        let client = self.state.better_notes_client();
+        let result =
+            client.export(&ItemKey::from(args.item_key), Some(format)).await;
+        if let Ok(content) = &result {
+            if format == zotero_api::NoteExportFormat::Html {
+                if let Err(e) = self.state.check_html_size(content) {
+                    return Ok(crate::response::text_error(&e));
+                }
+            }
+        }
+        Ok(crate::response::text_result(result))
     }
 
     /// Converts Markdown content into a Better Notes note using `args`.
@@ -134,7 +137,13 @@ impl ZoteroMcpServer {
         &self,
         args: FromMarkdownArgs,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let client = BetterNotesClient::new(&self.state);
+        if let Err(e) = self.state.check_write_permission() {
+            return Ok(crate::response::text_error(&e));
+        }
+        if let Err(e) = self.state.check_markdown_size(&args.markdown) {
+            return Ok(crate::response::text_error(&e));
+        }
+        let client = self.state.better_notes_client();
         Ok(crate::response::text_result(
             client
                 .convert_from_markdown(
@@ -157,7 +166,11 @@ impl ZoteroMcpServer {
         &self,
         args: RunTemplateArgs,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let client = BetterNotesClient::new(&self.state);
+        if let Err(e) = self.state.check_template_name_size(&args.template_name)
+        {
+            return Ok(crate::response::text_error(&e));
+        }
+        let client = self.state.better_notes_client();
         Ok(crate::response::text_result(
             client
                 .run_template(
@@ -179,7 +192,7 @@ impl ZoteroMcpServer {
         &self,
         args: NoteRelationsArgs,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let client = BetterNotesClient::new(&self.state);
+        let client = self.state.better_notes_client();
         Ok(crate::response::json_result(
             client.get_relations(&ItemKey::from(args.item_key)).await,
         ))
@@ -196,7 +209,7 @@ impl ZoteroMcpServer {
         &self,
         args: NoteTreeArgs,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let client = BetterNotesClient::new(&self.state);
+        let client = self.state.better_notes_client();
         Ok(crate::response::json_result(
             client.get_tree(&ItemKey::from(args.item_key)).await,
         ))
@@ -264,9 +277,9 @@ impl ZoteroMcpServer {
 #[cfg(test)]
 mod tests {
     use serde_json::json;
-    use zotero_api::AppState;
 
     use super::*;
+    use crate::state::AppState;
 
     mod fixtures {
         use std::{

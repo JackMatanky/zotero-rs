@@ -1,68 +1,30 @@
 //! Tag operations for the Zotero Local HTTP API.
-//!
-//! Provides methods on [`ZoteroClient`] for listing library tags, batch
-//! updating tags across items, renaming tags library-wide, and deleting tags.
-//!
-//! # Key Operations
-//!
-//! - [`ZoteroClient::list_tags`]: List library-wide tag names.
-//! - [`ZoteroClient::batch_update_tags`]: Add or remove tags across items.
-//! - [`ZoteroClient::rename_tag`]: Rename a tag across all items in the
-//!   library.
-//! - [`ZoteroClient::delete_tags`]: Delete tags library-wide.
-//!
-//! ```no_run
-//! # use zotero_api::errors::ZoteroApiError;
-//! # use zotero_api::AppState;
-//! # use zotero_api::ZoteroClient;
-//! # async fn example() -> Result<(), ZoteroApiError> {
-//! let state = AppState::from_env();
-//! let client = ZoteroClient::new(&state);
-//! let tags = client.list_tags(50).await?;
-//! println!("Found {} tags", tags.len());
-//! # Ok(())
-//! # }
-//! ```
 
 use std::collections::BTreeSet;
 
 use crate::{
-    client::ZoteroClient,
+    client::{ZoteroClient, ZoteroResponse},
     errors::ZoteroApiError,
-    keys::{ItemKey, TagName},
+    keys::TagName,
     objects::ZoteroTag,
 };
 
-impl ZoteroClient<'_> {
+impl ZoteroClient {
     /// Lists all tag names present in the library, returning up to `limit` tag
     /// strings.
-    ///
-    /// Queries `GET <prefix>/tags?limit=<limit>`. Extracts and deduplicates the
-    /// `tag` property string array returned by Zotero.
-    ///
-    /// # Arguments
-    ///
-    /// * `limit` - Maximum number of tag names to fetch.
-    ///
+    #[inline]
     /// # Errors
     ///
-    /// - [`ZoteroApiError::LocalApi`] if Zotero responds with a non-2xx status
-    ///   code.
-    /// - [`ZoteroApiError::Network`] if transport failures occur.
-    /// - [`ZoteroApiError::Json`] if tag array decoding fails.
-    #[inline]
+    /// Returns [`ZoteroApiError::LocalApi`]/[`ZoteroApiError::Network`]/
+    /// [`ZoteroApiError::Json`] if tag array decoding fails.
     pub async fn list_tags(
         &self,
         limit: usize,
     ) -> Result<Vec<TagName>, ZoteroApiError> {
-        let url = format!(
-            "{}{}/tags?limit={}",
-            self.state.zotero_api_url(),
-            self.target_prefix(),
-            limit
-        );
-        let raw: Vec<serde_json::Value> = self.get_json(&url).await?;
-        Ok(raw
+        let res: ZoteroResponse<Vec<serde_json::Value>> =
+            self.get("/tags").query("limit", limit.to_string()).send().await?;
+        Ok(res
+            .data
             .into_iter()
             .filter_map(|v| {
                 v.get("tag").and_then(|t| t.as_str()).map(TagName::from)
@@ -72,40 +34,28 @@ impl ZoteroClient<'_> {
 
     /// Batch-updates tags across multiple items by adding and removing tag
     /// lists.
-    ///
-    /// Iterates over `item_keys`, fetches each item's current tag list,
-    /// computes set differences (`current + add_tags - remove_tags`), and
-    /// patches each item in Zotero.
-    ///
-    /// # Arguments
-    ///
-    /// * `item_keys` - Slice of item keys to modify.
-    /// * `add_tags` - Tag names to attach to each item.
-    /// * `remove_tags` - Tag names to strip from each item.
-    ///
+    #[inline]
     /// # Errors
     ///
-    /// - [`ZoteroApiError::PermissionDenied`] if write permission is disabled.
-    /// - [`ZoteroApiError::NotFound`] if any item key does not exist.
-    /// - [`ZoteroApiError::LocalApi`] if Zotero rejects any item tag update.
-    /// - [`ZoteroApiError::Network`] if transport failures occur.
-    #[inline]
-    pub async fn batch_update_tags(
+    /// Returns [`ZoteroApiError::NotFound`] if any item key does not exist, or
+    /// [`ZoteroApiError::LocalApi`]/[`ZoteroApiError::Network`] if Zotero
+    /// rejects any item tag update.
+    pub async fn batch_update_tags<K: AsRef<str>>(
         &self,
-        item_keys: &[ItemKey],
+        item_keys: &[K],
         add_tags: &[TagName],
         remove_tags: &[TagName],
     ) -> Result<usize, ZoteroApiError> {
-        self.state.check_write_permission()?;
         let mut count: usize = 0;
         for key in item_keys {
-            let item = self.get_item(key).await?;
+            let key_str = key.as_ref();
+            let item = self.get_item(key_str).await?;
             let new_tags = diff_tags(item.data.tags, add_tags, remove_tags);
             let patch_payload = serde_json::json!({
                 "tags": new_tags,
                 "version": item.version,
             });
-            self.update_item(key, patch_payload).await?;
+            self.update_item(key_str, patch_payload).await?;
             count = count.saturating_add(1);
         }
         Ok(count)
@@ -113,91 +63,62 @@ impl ZoteroClient<'_> {
 
     /// Renames a tag from `old_tag` to `new_tag` across all matching items in
     /// the library target.
-    ///
-    /// Queries items matching `old_tag` via
-    /// [`search_by_tag`](Self::search_by_tag) and patches each
-    /// matching item to add `new_tag` and remove `old_tag`. Returns the number
-    /// of updated items.
-    ///
-    /// # Arguments
-    ///
-    /// * `old_tag` - Existing tag name to replace.
-    /// * `new_tag` - Replacement tag name to assign.
-    ///
+    #[inline]
     /// # Errors
     ///
-    /// - [`ZoteroApiError::PermissionDenied`] if write permission is disabled.
-    /// - [`ZoteroApiError::LocalApi`] if Zotero rejects tag update requests.
-    /// - [`ZoteroApiError::Network`] if transport failures occur.
-    #[inline]
-    pub async fn rename_tag(
+    /// Returns [`ZoteroApiError::LocalApi`]/[`ZoteroApiError::Network`] if
+    /// Zotero rejects any item tag update.
+    pub async fn rename_tag<K: AsRef<str>, V: AsRef<str>>(
         &self,
-        old_tag: &TagName,
-        new_tag: &TagName,
+        old_tag: K,
+        new_tag: V,
     ) -> Result<usize, ZoteroApiError> {
-        self.state.check_write_permission()?;
-        let items = self.search_by_tag(old_tag, 100).await?;
+        let old = old_tag.as_ref();
+        let new = TagName::from(new_tag.as_ref());
+        let items = self.search_by_tag(old, 100).await?;
+        let old_tag_name = TagName::from(old);
         let mut count: usize = 0;
         for item in items {
             let new_tags = diff_tags(
                 item.data.tags,
-                std::slice::from_ref(new_tag),
-                std::slice::from_ref(old_tag),
+                std::slice::from_ref(&new),
+                std::slice::from_ref(&old_tag_name),
             );
             let patch =
                 serde_json::json!({"tags": new_tags, "version": item.version});
-            self.update_item(&item.key, patch).await?;
+            self.update_item(item.key.as_str(), patch).await?;
             count = count.saturating_add(1);
         }
         Ok(count)
     }
 
     /// Deletes up to 50 tag names from the entire library in a single request.
-    ///
-    /// Issues `DELETE <prefix>/tags?tag=<joined_tags>` with URL-encoded tag
-    /// names separated by ` || `, passing the current library version
-    /// header for optimistic concurrency check.
-    ///
-    /// # Arguments
-    ///
-    /// * `tags` - Slice of tag names to delete from the library.
-    ///
+    #[inline]
     /// # Errors
     ///
-    /// - [`ZoteroApiError::PermissionDenied`] if write permission is disabled.
-    /// - [`ZoteroApiError::LocalApi`] if Zotero returns a non-2xx HTTP status
-    ///   code.
-    /// - [`ZoteroApiError::Network`] if transport failures occur.
-    #[inline]
-    pub async fn delete_tags(
+    /// Returns [`ZoteroApiError::LocalApi`]/[`ZoteroApiError::Network`] if
+    /// Zotero rejects the deletion request.
+    pub async fn delete_tags<K: AsRef<str>>(
         &self,
-        tags: &[TagName],
+        tags: &[K],
     ) -> Result<(), ZoteroApiError> {
-        self.state.check_write_permission()?;
         let version = self.get_library_version().await?;
         let joined = tags
             .iter()
-            .map(|t| urlencoding::encode(t.as_str()).into_owned())
+            .map(|t| urlencoding::encode(t.as_ref()).into_owned())
             .collect::<Vec<_>>()
             .join(" || ");
-        let url = format!(
-            "{}{}/tags?tag={}",
-            self.state.zotero_api_url(),
-            self.target_prefix(),
-            joined
-        );
-        self.delete(&url, version).await
+        self.delete_req("/tags")
+            .query("tag", joined)
+            .unmodified_since_version(version.into())
+            .send_unit()
+            .await?;
+        Ok(())
     }
 }
 
 /// Computes the updated tag array for an item after applying additions and
 /// removals.
-///
-/// # Arguments
-///
-/// * `existing` - Current tag objects attached to the item
-/// * `add` - Tag names to attach to the item
-/// * `remove` - Tag names to strip from the item
 pub(crate) fn diff_tags(
     existing: Vec<ZoteroTag>,
     add: &[TagName],
@@ -224,6 +145,7 @@ mod tests {
         use pretty_assertions::assert_eq;
 
         use super::*;
+
         #[test]
         fn adds_new_tags_and_removes_specified_existing_tags() {
             let existing = vec![ZoteroTag {

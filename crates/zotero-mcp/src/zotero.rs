@@ -57,7 +57,8 @@ mod fixtures {
 
     use rmcp::model::CallToolResult;
     use serde_json::json;
-    use zotero_api::{AppState, SecurityConfig};
+
+    use crate::{security::SecurityConfig, state::AppState};
 
     pub(in crate::zotero) fn zotero_state(zotero_api_url: String) -> AppState {
         AppState::test_default()

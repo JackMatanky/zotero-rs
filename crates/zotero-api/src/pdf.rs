@@ -1,3 +1,4 @@
+#![cfg(feature = "pdf")]
 //! Local PDF extraction module.
 //!
 //! Extracts plain text (with optional page filtering) and bookmark outlines

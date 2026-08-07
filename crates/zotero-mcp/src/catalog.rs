@@ -32,9 +32,8 @@ use rmcp::{
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use zotero_api::AppState;
 
-use crate::ZoteroMcpServer;
+use crate::{AppState, ZoteroMcpServer};
 
 /// Arguments for the `zotero_discover` tool.
 #[derive(Deserialize, JsonSchema)]

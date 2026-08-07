@@ -2,28 +2,12 @@
 //!
 //! Provides response structures and client methods for querying deleted items,
 //! collections, searches, and tags since a given library version.
-//!
-//! # Key Types
-//!
-//! - [`DeletedObjectsResponse`]: Container of deleted keys grouped by type.
-//!
-//! # Examples
-//!
-//! ```no_run
-//! use zotero_api::{AppState, LibraryVersion, ZoteroClient};
-//!
-//! # async fn run() -> Result<(), Box<dyn std::error::Error>> {
-//! let state = AppState::from_env();
-//! let client = ZoteroClient::new(&state);
-//! let deleted = client.get_deleted(LibraryVersion::from(100)).await?;
-//! println!("Deleted items: {:?}", deleted.items);
-//! # Ok(())
-//! # }
-//! ```
+
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    client::ZoteroClient, errors::ZoteroApiError, keys::LibraryVersion,
+    client::{ZoteroClient, ZoteroResponse},
+    errors::ZoteroApiError,
 };
 
 /// Response object from `GET <prefix>/deleted?since=<version>`.
@@ -43,24 +27,24 @@ pub struct DeletedObjectsResponse {
     pub tags: Vec<String>,
 }
 
-impl ZoteroClient<'_> {
+impl ZoteroClient {
     /// Retrieves deleted library objects (items, collections, searches, tags)
     /// since `since`.
-    ///
+    #[inline]
     /// # Errors
     ///
-    /// Returns [`ZoteroApiError`] if fetching deleted objects fails.
-    #[inline]
-    pub async fn get_deleted(
+    /// Returns [`ZoteroApiError::LocalApi`]/[`ZoteroApiError::Network`]/
+    /// [`ZoteroApiError::Json`] if the request fails.
+    pub async fn get_deleted<K: Into<u64>>(
         &self,
-        since: LibraryVersion,
+        since: K,
     ) -> Result<DeletedObjectsResponse, ZoteroApiError> {
-        let url = format!(
-            "{}{}/deleted?since={since}",
-            self.state.zotero_api_url(),
-            self.target_prefix()
-        );
-        self.get_json(&url).await
+        let res: ZoteroResponse<DeletedObjectsResponse> = self
+            .get("/deleted")
+            .query("since", since.into().to_string())
+            .send()
+            .await?;
+        Ok(res.data)
     }
 }
 
@@ -71,7 +55,7 @@ mod tests {
     use super::*;
     use crate::{
         client::test_http::{MockServer, http_response},
-        state::AppState,
+        keys::LibraryVersion,
     };
 
     #[tokio::test]
@@ -85,10 +69,10 @@ mod tests {
         .to_string();
 
         let server = MockServer::new(vec![http_response("200 OK", &json_resp)]);
-        let state = AppState::test_default().with_zotero_api_url(server.url());
-        let client = ZoteroClient::new(&state);
+        let client = ZoteroClient::new(server.url());
 
-        let deleted = client.get_deleted(LibraryVersion(10)).await.unwrap();
+        let deleted =
+            client.get_deleted(LibraryVersion::new(10)).await.unwrap();
         assert_eq!(deleted.items, vec!["I1".to_owned(), "I2".to_owned()]);
         assert_eq!(deleted.collections, vec!["C1".to_owned()]);
         assert_eq!(deleted.tags, vec!["tag1".to_owned()]);

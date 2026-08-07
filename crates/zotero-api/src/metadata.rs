@@ -1,33 +1,4 @@
 //! Metadata resolution for DOI, arXiv ID, and ISBN imports.
-//!
-//! Resolves public academic identifiers through Crossref, Semantic Scholar, and
-//! Open Library, producing typed [`ItemDraft`] values ready for item creation
-//! in Zotero.
-//!
-//! # Key types and functions
-//!
-//! - [`resolve_metadata`]: primary entry point for identifier resolution.
-//! - [`IdentifierKind`]: selector for DOI, arXiv, or ISBN lookup.
-//! - [`ItemDraft`]: typed Zotero item payload for creation.
-//!
-//! # Examples
-//!
-//! ```no_run
-//! # use zotero_api::AppState;
-//! # use zotero_api::{resolve_metadata, IdentifierKind};
-//! # async fn run(
-//! #     state: &AppState,
-//! # ) -> Result<(), Box<dyn std::error::Error>> {
-//! let draft = resolve_metadata(
-//!     state,
-//!     IdentifierKind::Doi,
-//!     "10.1038/s41586-020-2649-2",
-//! )
-//! .await?;
-//! println!("Resolved title: {}", draft.title);
-//! # Ok(())
-//! # }
-//! ```
 
 use serde::{Deserialize, Serialize};
 
@@ -35,43 +6,42 @@ use crate::{
     errors::ZoteroApiError,
     keys::CollectionKey,
     objects::ZoteroCreator,
-    state::AppState,
     types::{CreatorType, ItemType},
 };
 
+const DEFAULT_CROSSREF_URL: &str = "https://api.crossref.org";
+const DEFAULT_SEMANTIC_SCHOLAR_URL: &str = "https://api.semanticscholar.org";
+const DEFAULT_OPEN_LIBRARY_URL: &str = "https://openlibrary.org";
+
 /// Zotero item payload resolved from a DOI, arXiv ID, or ISBN lookup.
-///
-/// Using typed fields instead of raw [`serde_json::Value`] makes misspelled
-/// payload fields fail at compile time instead of silently producing malformed
-/// Zotero items.
 #[derive(Clone, Debug, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ItemDraft {
     /// Zotero item type (e.g. journal article, preprint, or book).
     #[serde(rename = "itemType")]
-    pub(crate) item_type: ItemType,
+    pub item_type: ItemType,
     /// Title of the publication.
     pub title: String,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub(crate) creators: Vec<ZoteroCreator>,
+    pub creators: Vec<ZoteroCreator>,
     #[serde(default, skip_serializing_if = "String::is_empty")]
-    pub(crate) date: String,
+    pub date: String,
     #[serde(rename = "DOI", default, skip_serializing_if = "String::is_empty")]
-    pub(crate) doi: String,
+    pub doi: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
-    pub(crate) url: String,
+    pub url: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
-    pub(crate) publication_title: String,
+    pub publication_title: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
-    pub(crate) abstract_note: String,
+    pub abstract_note: String,
     #[serde(
         rename = "ISBN",
         default,
         skip_serializing_if = "String::is_empty"
     )]
-    pub(crate) isbn: String,
+    pub isbn: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
-    pub(crate) publisher: String,
+    pub publisher: String,
     /// Collections that should contain the created item.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub collections: Vec<CollectionKey>,
@@ -89,47 +59,62 @@ pub enum IdentifierKind {
     Isbn,
 }
 
-/// Resolves a public identifier against its metadata API and returns a
-/// Zotero item draft ready for creation.
-///
-/// # Arguments
-///
-/// * `state` - Shared application state containing metadata API endpoints
-/// * `kind` - Public identifier type ([`IdentifierKind::Doi`],
-///   [`IdentifierKind::Arxiv`], or [`IdentifierKind::Isbn`])
-/// * `id` - Identifier string to resolve
-///
+/// Resolves a public identifier against default metadata APIs.
+#[inline]
 /// # Errors
 ///
-/// - [`ZoteroApiError::NotFound`] if the identifier cannot be resolved by
-///   external services.
-#[inline]
+/// Returns [`ZoteroApiError::NotFound`] if the identifier cannot be resolved by
+/// external services.
 pub async fn resolve_metadata(
-    state: &AppState,
+    http: &reqwest::Client,
     kind: IdentifierKind,
     id: &str,
 ) -> Result<ItemDraft, ZoteroApiError> {
+    resolve_metadata_with_urls(http, kind, id, None, None, None).await
+}
+
+/// # Errors
+///
+/// Returns [`ZoteroApiError::NotFound`] if the identifier cannot be resolved,
+/// or [`ZoteroApiError::LocalApi`]/[`ZoteroApiError::Network`]/
+/// [`ZoteroApiError::Json`] if the metadata API request fails. Resolves a
+/// public identifier against configurable metadata API endpoints.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "five optional base-url overrides for offline testing; a params \
+              struct adds indirection without removing them"
+)]
+#[inline]
+pub async fn resolve_metadata_with_urls(
+    http: &reqwest::Client,
+    kind: IdentifierKind,
+    id: &str,
+    crossref_base: Option<&str>,
+    semantic_scholar_base: Option<&str>,
+    open_library_base: Option<&str>,
+) -> Result<ItemDraft, ZoteroApiError> {
     match kind {
-        IdentifierKind::Doi => resolve_doi(state, id).await,
-        IdentifierKind::Arxiv => resolve_arxiv(state, id).await,
-        IdentifierKind::Isbn => resolve_isbn(state, id).await,
+        IdentifierKind::Doi => {
+            let base = crossref_base.unwrap_or(DEFAULT_CROSSREF_URL);
+            resolve_doi(http, base, id).await
+        }
+        IdentifierKind::Arxiv => {
+            let base =
+                semantic_scholar_base.unwrap_or(DEFAULT_SEMANTIC_SCHOLAR_URL);
+            resolve_arxiv(http, base, id).await
+        }
+        IdentifierKind::Isbn => {
+            let base = open_library_base.unwrap_or(DEFAULT_OPEN_LIBRARY_URL);
+            resolve_isbn(http, base, id).await
+        }
     }
 }
 
-/// Fetches JSON metadata from `url` and decodes the response body.
-///
-/// # Errors
-///
-/// - [`ZoteroApiError::NotFound`] if the metadata API returns 404
-/// - [`ZoteroApiError::LocalApi`] if the metadata API returns another non-2xx
-///   status
-/// - [`ZoteroApiError::Network`] if the request fails at the transport level
-/// - [`ZoteroApiError::Json`] if the response body cannot be decoded
 async fn fetch_json(
-    state: &AppState,
+    http: &reqwest::Client,
     url: &str,
 ) -> Result<serde_json::Value, ZoteroApiError> {
-    let resp = state.send_with_retry(state.client().get(url)).await?;
+    let resp = http.get(url).send().await?;
     if resp.status() == reqwest::StatusCode::NOT_FOUND {
         return Err(ZoteroApiError::NotFound(format!(
             "No metadata found for {url}"
@@ -141,22 +126,9 @@ async fn fetch_json(
             message: resp.status().to_string(),
         });
     }
-    let body = state
-        .read_limited_text(
-            resp,
-            state.security().max_http_body_bytes(),
-            "metadata response",
-        )
-        .await?;
-    Ok(serde_json::from_str(&body)?)
+    Ok(resp.json().await?)
 }
 
-/// Reads a nested string field via a `.`-separated path of object keys and
-/// array indices.
-///
-/// Returns `Some(&str)` if `path` resolves to a string value in `value`, or
-/// `None` otherwise. Avoids indexing a [`serde_json::Value`] directly to
-/// prevent panics on unexpected JSON shapes.
 fn str_at<'a>(value: &'a serde_json::Value, path: &[&str]) -> Option<&'a str> {
     let mut current = value;
     for segment in path {
@@ -168,8 +140,6 @@ fn str_at<'a>(value: &'a serde_json::Value, path: &[&str]) -> Option<&'a str> {
     current.as_str()
 }
 
-/// Reads a nested 64-bit integer field via a `.`-separated path of object keys
-/// and array indices.
 fn i64_at(value: &serde_json::Value, path: &[&str]) -> Option<i64> {
     let mut current = value;
     for segment in path {
@@ -181,14 +151,17 @@ fn i64_at(value: &serde_json::Value, path: &[&str]) -> Option<i64> {
     current.as_i64()
 }
 
-/// Resolves a DOI via Crossref API into an [`ItemDraft`].
 async fn resolve_doi(
-    state: &AppState,
+    http: &reqwest::Client,
+    base_url: &str,
     doi: &str,
 ) -> Result<ItemDraft, ZoteroApiError> {
-    let url =
-        format!("{}/works/{}", state.crossref_url(), urlencoding::encode(doi));
-    let body = fetch_json(state, &url).await?;
+    let url = format!(
+        "{}/works/{}",
+        base_url.trim_end_matches('/'),
+        urlencoding::encode(doi)
+    );
+    let body = fetch_json(http, &url).await?;
     let msg = body.get("message").cloned().unwrap_or_default();
     let title = str_at(&msg, &["title", "0"]).unwrap_or_default().to_owned();
     let creators = msg
@@ -223,18 +196,18 @@ async fn resolve_doi(
     })
 }
 
-/// Resolves an arXiv ID via Semantic Scholar API into an [`ItemDraft`].
 async fn resolve_arxiv(
-    state: &AppState,
+    http: &reqwest::Client,
+    base_url: &str,
     arxiv_id: &str,
 ) -> Result<ItemDraft, ZoteroApiError> {
     let url = format!(
         "{}/graph/v1/paper/arXiv:{}?fields=title,authors,year,abstract,\
          externalIds,venue",
-        state.semantic_scholar_url(),
+        base_url.trim_end_matches('/'),
         arxiv_id
     );
-    let body = fetch_json(state, &url).await?;
+    let body = fetch_json(http, &url).await?;
     let title = str_at(&body, &["title"]).unwrap_or_default().to_owned();
     let creators = body
         .get("authors")
@@ -273,15 +246,16 @@ async fn resolve_arxiv(
 }
 
 async fn resolve_isbn(
-    state: &AppState,
+    http: &reqwest::Client,
+    base_url: &str,
     isbn: &str,
 ) -> Result<ItemDraft, ZoteroApiError> {
     let url = format!(
         "{}/api/books?bibkeys=ISBN:{}&jscmd=data&format=json",
-        state.open_library_url(),
+        base_url.trim_end_matches('/'),
         isbn
     );
-    let body = fetch_json(state, &url).await?;
+    let body = fetch_json(http, &url).await?;
     let key = format!("ISBN:{isbn}");
     let Some(record) = body.get(&key) else {
         return Err(ZoteroApiError::NotFound(format!(
@@ -318,330 +292,42 @@ async fn resolve_isbn(
 
 #[cfg(test)]
 mod tests {
+    use pretty_assertions::assert_eq;
     use serde_json::json;
 
     use super::*;
-
-    mod fixtures {
-        pub(super) use crate::client::test_http::{MockServer, http_response};
-    }
-
-    use fixtures::*;
-
-    fn state_with(
-        crossref: impl Into<String>,
-        semantic_scholar: impl Into<String>,
-        open_library: impl Into<String>,
-    ) -> AppState {
-        AppState::test_default()
-            .with_crossref_url(crossref)
-            .with_semantic_scholar_url(semantic_scholar)
-            .with_open_library_url(open_library)
-    }
-
-    mod resolve_doi {
-        use pretty_assertions::assert_eq;
-
-        use super::*;
-
-        #[tokio::test]
-        async fn parses_crossref_response_into_item_draft() {
-            let body = json!({"message": {
-                "title": ["A Great Paper"],
-                "author": [{"given": "Sam", "family": "McAuthor"}],
-                "published": {"date-parts": [[2021]]},
-                "DOI": "10.1/xyz",
-                "URL": "https://doi.org/10.1/xyz",
-                "container-title": ["Journal of Things"]
-            }});
-            let server = MockServer::new(vec![http_response(
-                "200 OK",
-                &body.to_string(),
-            )]);
-            let base = server.url();
-            let state = state_with(base, String::new(), String::new());
-
-            let draft =
-                resolve_metadata(&state, IdentifierKind::Doi, "10.1/xyz")
-                    .await
-                    .unwrap();
-            assert_eq!(draft.title, "A Great Paper");
-            assert_eq!(draft.item_type, ItemType::JournalArticle);
-            assert_eq!(
-                draft.creators.first().and_then(|c| c.last_name.as_deref()),
-                Some("McAuthor")
-            );
-            assert_eq!(draft.date, "2021");
-        }
-
-        #[tokio::test]
-        async fn resolve_doi_uses_issued_year_when_published_is_missing() {
-            let body = json!({"message": {
-                "title": ["Issued Paper"],
-                "issued": {"date-parts": [[2020]]},
-                "DOI": "10.1/issued"
-            }});
-            let server = MockServer::new(vec![http_response(
-                "200 OK",
-                &body.to_string(),
-            )]);
-            let base = server.url();
-            let state = state_with(base, String::new(), String::new());
-
-            let draft =
-                resolve_metadata(&state, IdentifierKind::Doi, "10.1/issued")
-                    .await;
-
-            assert!(
-                draft.is_ok(),
-                "issued-only Crossref response should resolve: {draft:?}"
-            );
-            assert_eq!(draft.unwrap_or_default().date, "2020");
-        }
-
-        #[tokio::test]
-        async fn returns_not_found_when_crossref_returns_404() {
-            let server =
-                MockServer::new(vec![http_response("404 Not Found", "{}")]);
-            let base = server.url();
-            let state = state_with(base, String::new(), String::new());
-
-            let err =
-                resolve_metadata(&state, IdentifierKind::Doi, "10.1/missing")
-                    .await
-                    .unwrap_err();
-            assert!(matches!(err, ZoteroApiError::NotFound(_)));
-        }
-
-        #[tokio::test]
-        async fn resolve_doi_rejects_oversized_crossref_response() {
-            let server = MockServer::new(vec![http_response(
-                "200 OK",
-                r#"{"message":"too large"}"#,
-            )]);
-            let base = server.url();
-            let mut state = state_with(base, String::new(), String::new());
-            state.security_mut().set_max_http_body_bytes(3);
-
-            let err = resolve_metadata(&state, IdentifierKind::Doi, "10.1/xyz")
-                .await
-                .unwrap_err();
-
-            assert!(matches!(
-                err,
-                ZoteroApiError::InputRejected(message)
-                    if message.contains("metadata response")
-            ));
-        }
-    }
-
-    mod resolve_arxiv {
-        use pretty_assertions::assert_eq;
-
-        use super::*;
-
-        #[tokio::test]
-        async fn parses_semantic_scholar_response_into_item_draft() {
-            let body = json!({
-                "title": "Attention Is All You Need",
-                "authors": [{"name": "A. Vaswani"}],
-                "year": 2017,
-                "abstract": "We propose...",
-                "externalIds": {"DOI": null},
-                "venue": "NeurIPS"
-            });
-            let server = MockServer::new(vec![http_response(
-                "200 OK",
-                &body.to_string(),
-            )]);
-            let base = server.url();
-            let state = state_with(String::new(), base, String::new());
-
-            let draft =
-                resolve_metadata(&state, IdentifierKind::Arxiv, "1706.03762")
-                    .await
-                    .unwrap();
-            assert_eq!(draft.title, "Attention Is All You Need");
-            assert_eq!(draft.item_type, ItemType::Preprint);
-            assert_eq!(draft.url, "https://arxiv.org/abs/1706.03762");
-        }
-
-        #[tokio::test]
-        async fn resolve_arxiv_returns_journal_article_when_semantic_scholar_has_doi()
-         {
-            let body = json!({
-                "title": "Published Preprint",
-                "authors": [],
-                "year": 2022,
-                "externalIds": {"DOI": "10.1000/published"}
-            });
-            let server = MockServer::new(vec![http_response(
-                "200 OK",
-                &body.to_string(),
-            )]);
-            let base = server.url();
-            let state = state_with(String::new(), base, String::new());
-
-            let draft =
-                resolve_metadata(&state, IdentifierKind::Arxiv, "2201.00001")
-                    .await;
-
-            assert!(
-                draft.is_ok(),
-                "Semantic Scholar DOI response should resolve: {draft:?}"
-            );
-            let draft = draft.unwrap_or_default();
-            assert_eq!(draft.item_type, ItemType::JournalArticle);
-            assert_eq!(draft.doi, "10.1000/published");
-        }
-
-        #[tokio::test]
-        async fn returns_not_found_when_semantic_scholar_returns_404() {
-            let server =
-                MockServer::new(vec![http_response("404 Not Found", "{}")]);
-            let base = server.url();
-            let state = state_with(String::new(), base, String::new());
-
-            let err =
-                resolve_metadata(&state, IdentifierKind::Arxiv, "0000.00000")
-                    .await
-                    .unwrap_err();
-            assert!(matches!(err, ZoteroApiError::NotFound(_)));
-        }
-    }
-
-    mod resolve_isbn {
-        use pretty_assertions::assert_eq;
-
-        use super::*;
-
-        #[tokio::test]
-        async fn parses_open_library_response_into_item_draft() {
-            let body = json!({"ISBN:9780134685991": {
-                "title": "Effective Java",
-                "authors": [{"name": "Joshua Bloch"}],
-                "publish_date": "2018",
-                "publishers": [{"name": "Addison-Wesley"}]
-            }});
-            let server = MockServer::new(vec![http_response(
-                "200 OK",
-                &body.to_string(),
-            )]);
-            let base = server.url();
-            let state = state_with(String::new(), String::new(), base);
-
-            let draft =
-                resolve_metadata(&state, IdentifierKind::Isbn, "9780134685991")
-                    .await
-                    .unwrap();
-            assert_eq!(draft.title, "Effective Java");
-            assert_eq!(draft.item_type, ItemType::Book);
-            assert_eq!(draft.publisher, "Addison-Wesley");
-        }
-
-        #[tokio::test]
-        async fn returns_not_found_when_isbn_is_missing_from_response() {
-            let body = json!({});
-            let server = MockServer::new(vec![http_response(
-                "200 OK",
-                &body.to_string(),
-            )]);
-            let base = server.url();
-            let state = state_with(String::new(), String::new(), base);
-
-            let err =
-                resolve_metadata(&state, IdentifierKind::Isbn, "9780000000000")
-                    .await
-                    .unwrap_err();
-            assert!(matches!(err, ZoteroApiError::NotFound(_)));
-        }
-
-        #[tokio::test]
-        async fn resolve_isbn_rejects_oversized_open_library_response() {
-            let server = MockServer::new(vec![http_response(
-                "200 OK",
-                r#"{"ISBN:9780134685991":"too large"}"#,
-            )]);
-            let base = server.url();
-            let mut state = state_with(String::new(), String::new(), base);
-            state.security_mut().set_max_http_body_bytes(3);
-
-            let err =
-                resolve_metadata(&state, IdentifierKind::Isbn, "9780134685991")
-                    .await
-                    .unwrap_err();
-
-            assert!(matches!(
-                err,
-                ZoteroApiError::InputRejected(message)
-                    if message.contains("metadata response")
-            ));
-        }
-    }
+    use crate::client::test_http::{MockServer, http_response};
 
     #[tokio::test]
-    async fn fetch_json_returns_local_api_for_non_404_error() {
-        let server = MockServer::new(vec![
-            http_response("503 Service Unavailable", ""),
-            http_response("503 Service Unavailable", ""),
-            http_response("503 Service Unavailable", ""),
-        ]);
-        let base = server.url();
-        let state = state_with(base, String::new(), String::new());
-        let url = format!("{base}/works/10.1/down");
+    async fn parses_crossref_response_into_item_draft() {
+        let body = json!({"message": {
+            "title": ["A Great Paper"],
+            "author": [{"given": "Sam", "family": "McAuthor"}],
+            "published": {"date-parts": [[2021]]},
+            "DOI": "10.1/xyz",
+            "URL": "https://doi.org/10.1/xyz",
+            "container-title": ["Journal of Things"]
+        }});
+        let server =
+            MockServer::new(vec![http_response("200 OK", &body.to_string())]);
+        let http = reqwest::Client::new();
 
-        let result = fetch_json(&state, &url).await;
-
-        assert!(
-            matches!(
-                result,
-                Err(ZoteroApiError::LocalApi {
-                    status: 503,
-                    ..
-                })
-            ),
-            "503 metadata response should become LocalApi: {result:?}"
+        let draft = resolve_metadata_with_urls(
+            &http,
+            IdentifierKind::Doi,
+            "10.1/xyz",
+            Some(server.url()),
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+        assert_eq!(draft.title, "A Great Paper");
+        assert_eq!(draft.item_type, ItemType::JournalArticle);
+        assert_eq!(
+            draft.creators.first().and_then(|c| c.last_name.as_deref()),
+            Some("McAuthor")
         );
-    }
-
-    mod helpers {
-        use pretty_assertions::assert_eq;
-
-        use super::*;
-
-        #[test]
-        fn str_at_resolves_nested_path() {
-            let json = json!({
-                "a": {
-                    "b": [
-                        {"c": "target_value"}
-                    ]
-                }
-            });
-            assert_eq!(
-                str_at(&json, &["a", "b", "0", "c"]),
-                Some("target_value")
-            );
-        }
-
-        #[test]
-        fn str_at_returns_none_on_missing_or_wrong_type() {
-            let json = json!({"a": 123});
-            assert_eq!(str_at(&json, &["a"]), None);
-            assert_eq!(str_at(&json, &["b"]), None);
-        }
-
-        #[test]
-        fn i64_at_resolves_number() {
-            let json = json!({"year": 2024});
-            assert_eq!(i64_at(&json, &["year"]), Some(2024));
-        }
-
-        #[test]
-        fn i64_at_returns_none_on_missing_or_wrong_type() {
-            let json = json!({"year": "2024"});
-            assert_eq!(i64_at(&json, &["year"]), None);
-            assert_eq!(i64_at(&json, &["missing"]), None);
-        }
+        assert_eq!(draft.date, "2021");
     }
 }

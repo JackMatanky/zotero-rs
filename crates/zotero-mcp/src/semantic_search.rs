@@ -1,29 +1,4 @@
 //! MCP tool handler and argument models for local semantic search.
-//!
-//! Covers the `zotero_semantic_search` grouped-router actions (gated behind
-//! `ZOTERO_SEMANTIC_SEARCH=1`), providing vector embedding generation, chunk
-//! indexing, and similarity search over Zotero item content.
-//!
-//! # Main Types
-//!
-//! - [`ZoteroSemanticSearchCommand`]: Grouped-router command for semantic
-//!   search actions.
-//! - [`SemanticSearchArgs`]: Arguments for natural-language semantic similarity
-//!   search.
-//! - [`SemanticIndexArgs`]: Arguments for re-embedding and indexing library
-//!   items.
-//!
-//! # Examples
-//!
-//! ```ignore
-//! # use zotero_api::AppState;
-//! # use zotero_mcp::ZoteroMcpServer;
-//! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-//! let state = AppState::from_env();
-//! let server = ZoteroMcpServer::new(state);
-//! # Ok(())
-//! # }
-//! ```
 
 use rmcp::{
     handler::server::wrapper::Parameters, model::CallToolResult, tool,
@@ -31,7 +6,7 @@ use rmcp::{
 };
 use schemars::JsonSchema;
 use serde::Deserialize;
-use zotero_api::ZoteroClient;
+use zotero_semantic::{DEFAULT_MIN_SIMILARITY, index_library, search_library};
 
 use crate::{ZoteroMcpServer, response::json_result};
 
@@ -50,7 +25,7 @@ pub(crate) struct SemanticSearchArgs {
 #[derive(Deserialize, JsonSchema)]
 pub(crate) struct SemanticIndexArgs {
     /// Re-index every item regardless of stored `dateModified` (default:
-    /// false; only changed or new items are re-embedded).
+    /// false).
     force: Option<bool>,
 }
 
@@ -81,9 +56,6 @@ impl ZoteroMcpServer {
             open_world_hint = false
         )
     )]
-    /// # Errors
-    ///
-    /// Returns [`rmcp::ErrorData`] for protocol-level failures.
     pub(crate) async fn zotero_semantic_search(
         &self,
         Parameters(args): Parameters<ZoteroSemanticSearchCommand>,
@@ -109,15 +81,14 @@ impl ZoteroMcpServer {
         args: SemanticSearchArgs,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let limit = args.limit.unwrap_or(20);
-        let min_similarity = args
-            .min_similarity
-            .unwrap_or(zotero_api::semantic_search::DEFAULT_MIN_SIMILARITY);
+        let min_similarity =
+            args.min_similarity.unwrap_or(DEFAULT_MIN_SIMILARITY);
         let state = &self.state;
         let result = async {
             let index = state.semantic_index().await?;
             let provider = state.embedding_provider().await?;
             let all_chunks = index.load_all_chunks().await?;
-            zotero_api::semantic_search::search_library(
+            search_library(
                 &provider,
                 &all_chunks,
                 &args.query,
@@ -140,11 +111,8 @@ impl ZoteroMcpServer {
         let result = async {
             let index = state.semantic_index().await?;
             let provider = state.embedding_provider().await?;
-            let client = ZoteroClient::new(state);
-            zotero_api::semantic_search::index_library(
-                &client, index, &provider, force,
-            )
-            .await
+            let client = state.zotero_client();
+            index_library(&client, index, &provider, force).await
         }
         .await;
         Ok(json_result(result))
@@ -169,14 +137,16 @@ mod tests {
     use std::sync::Arc;
 
     use zotero_api::{
-        AppState, Embedding, EmbeddingProvider, ItemKey, SemanticIndex,
+        ItemKey,
         client::test_http::{MockServer, http_response},
+    };
+    use zotero_semantic::{
+        Embedding, EmbeddingProvider, NewChunk, SemanticIndex,
     };
 
     use super::*;
+    use crate::state::AppState;
 
-    /// Deterministic test [`EmbeddingProvider`]: every text embeds to the
-    /// fixed vector supplied at construction.
     #[derive(Debug)]
     struct FixedProvider {
         vector: Vec<f32>,
@@ -194,22 +164,14 @@ mod tests {
         }
     }
 
-    fn new_chunk(
-        chunk_index: i64,
-        text: &str,
-        value: f32,
-    ) -> zotero_api::semantic_search::NewChunk {
-        zotero_api::semantic_search::NewChunk {
+    fn new_chunk(chunk_index: i64, text: &str, value: f32) -> NewChunk {
+        NewChunk {
             chunk_index,
             chunk_text: text.to_owned(),
             embedding: Embedding::from(vec![value]),
         }
     }
 
-    /// Builds an [`AppState`] fixture with semantic search enabled, pointed
-    /// at a private tempdir index db, and with `embedding_provider`
-    /// pre-populated (bypassing `FastEmbedProvider::load`'s real ONNX model
-    /// load/download entirely).
     fn semantic_state(
         zotero_api_url: String,
         db_path: std::path::PathBuf,

@@ -1,31 +1,30 @@
 [package]
-name = "zotero-mcp"
+name = "zotero-semantic"
 version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true
-description = "Model Context Protocol server for Zotero"
+description = "Semantic search, embedding generation, chunk storage, and vector similarity search for Zotero libraries"
 readme = "../../README.md"
 repository.workspace = true
 license.workspace = true
-keywords = ["bibliography", "bibtex", "mcp", "zotero"]
-categories = ["command-line-utilities"]
+keywords = ["bibliography", "embeddings", "zotero"]
+categories = ["api-bindings"]
 
 [dependencies]
-reqwest = { workspace = true, features = ["json"] }
-rmcp.workspace = true
-schemars.workspace = true
+fastembed.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+sqlx = { workspace = true, default-features = false, features = [
+  "runtime-tokio",
+  "sqlite",
+] }
+thiserror.workspace = true
 tokio.workspace = true
 tracing.workspace = true
-tracing-subscriber.workspace = true
-url.workspace = true
-zotero-api = { workspace = true, features = ["full"] }
-zotero-semantic.workspace = true
+zotero-api.workspace = true
 
 [dev-dependencies]
 pretty_assertions.workspace = true
-sqlx.workspace = true
 tempfile.workspace = true
 zotero-api = { workspace = true, features = ["test-util"] }
 

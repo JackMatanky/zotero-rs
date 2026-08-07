@@ -36,8 +36,8 @@ use rmcp::{
 use schemars::JsonSchema;
 use serde::Deserialize;
 use zotero_api::{
-    AuxFilePath, BetterBibtexClient, CitationKey, CollectionPath, ItemKey,
-    SearchQuery, TranslatorName,
+    AuxFilePath, CitationKey, CollectionPath, ItemKey, SearchQuery,
+    TranslatorName,
 };
 
 use crate::ZoteroMcpServer;
@@ -182,7 +182,7 @@ impl ZoteroMcpServer {
         &self,
         args: GetCitekeysArgs,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let client = BetterBibtexClient::new(&self.state);
+        let client = self.state.better_bibtex_client();
         let item_keys: Vec<ItemKey> =
             args.item_keys.into_iter().map(Into::into).collect();
         Ok(crate::response::json_result(client.get_citekeys(&item_keys).await))
@@ -199,7 +199,10 @@ impl ZoteroMcpServer {
         &self,
         args: RegenerateKeysArgs,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let client = BetterBibtexClient::new(&self.state);
+        if let Err(e) = self.state.check_write_permission() {
+            return Ok(crate::response::text_error(&e));
+        }
+        let client = self.state.better_bibtex_client();
         let citekeys: Vec<CitationKey> =
             args.citekeys.into_iter().map(Into::into).collect();
         match client.regenerate_keys(&citekeys).await {
@@ -221,7 +224,7 @@ impl ZoteroMcpServer {
         &self,
         args: ExportItemsArgs,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let client = BetterBibtexClient::new(&self.state);
+        let client = self.state.better_bibtex_client();
         let citekeys: Vec<CitationKey> =
             args.citekeys.into_iter().map(Into::into).collect();
         let translator = TranslatorName::from(args.translator);
@@ -241,7 +244,7 @@ impl ZoteroMcpServer {
         &self,
         args: BibliographyArgs,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let client = BetterBibtexClient::new(&self.state);
+        let client = self.state.better_bibtex_client();
         let citekeys: Vec<CitationKey> =
             args.citekeys.into_iter().map(Into::into).collect();
         let format = args.format.map(Into::into);
@@ -261,12 +264,20 @@ impl ZoteroMcpServer {
         &self,
         args: ScanAuxArgs,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let client = BetterBibtexClient::new(&self.state);
+        if let Err(e) = self.state.check_write_permission() {
+            return Ok(crate::response::text_error(&e));
+        }
+        let aux_path = AuxFilePath::from(args.aux_path);
+        if let Err(e) =
+            self.state.check_aux_path(std::path::Path::new(aux_path.as_ref()))
+        {
+            return Ok(crate::response::text_error(&e));
+        }
+        let client = self.state.better_bibtex_client();
         let collection = args.collection.map_or_else(
             CollectionPath::personal_library,
             CollectionPath::from,
         );
-        let aux_path = AuxFilePath::from(args.aux_path);
         Ok(crate::response::json_result(
             client.scan_aux(&collection, &aux_path).await,
         ))
@@ -284,7 +295,7 @@ impl ZoteroMcpServer {
         &self,
         args: PandocFilterArgs,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let client = BetterBibtexClient::new(&self.state);
+        let client = self.state.better_bibtex_client();
         let citekeys: Vec<CitationKey> =
             args.citekeys.into_iter().map(Into::into).collect();
         Ok(crate::response::json_result(
@@ -303,8 +314,19 @@ impl ZoteroMcpServer {
         &self,
         args: AutoExportAddArgs,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let client = BetterBibtexClient::new(&self.state);
-        match client.autoexport_add(&args.into()).await {
+        if let Err(e) = self.state.check_write_permission() {
+            return Ok(crate::response::text_error(&e));
+        }
+        let request: zotero_api::better_bibtex::AutoExportAddRequest =
+            args.into();
+        if let Err(e) = self
+            .state
+            .check_export_path(std::path::Path::new(request.path.as_ref()))
+        {
+            return Ok(crate::response::text_error(&e));
+        }
+        let client = self.state.better_bibtex_client();
+        match client.autoexport_add(&request).await {
             Ok(_) => Ok(crate::response::text_success(
                 "Auto-export configured successfully",
             )),
@@ -323,7 +345,7 @@ impl ZoteroMcpServer {
         &self,
         args: BetterBibtexSearchArgs,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let client = BetterBibtexClient::new(&self.state);
+        let client = self.state.better_bibtex_client();
         Ok(crate::response::json_result(
             client.search(&SearchQuery::from(args.query)).await,
         ))
@@ -407,9 +429,9 @@ impl ZoteroMcpServer {
 #[cfg(test)]
 mod tests {
     use serde_json::json;
-    use zotero_api::AppState;
 
     use super::*;
+    use crate::state::AppState;
 
     mod fixtures {
         use std::{

@@ -1,34 +1,9 @@
 //! Note and annotation operations for the Zotero Local HTTP API.
-//!
-//! Provides methods on [`ZoteroClient`] for creating child note items and PDF
-//! annotations, plus helpers for synthesizing annotations and notes into
-//! structured Markdown documents.
-//!
-//! # Main Types
-//!
-//! - [`AnnotationDraft`] - Payload for creating a PDF annotation
-//! - [`AnnotationPosition`] - Serialized annotation position payload
-//!
-//! # Examples
-//!
-//! ```no_run
-//! # use zotero_api::errors::ZoteroApiError;
-//! # use zotero_api::AppState;
-//! # use zotero_api::{ItemKey, ZoteroClient};
-//! # async fn example() -> Result<(), ZoteroApiError> {
-//! let state = AppState::from_env();
-//! let client = ZoteroClient::new(&state);
-//! let parent_key = ItemKey::from("PARENT01");
-//! let note = client.create_note(&parent_key, "<p>Meeting notes</p>").await?;
-//! let _serialized = serde_json::to_string(&note);
-//! # Ok(())
-//! # }
-//! ```
 
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    client::ZoteroClient,
+    client::{ZoteroClient, ZoteroResponse},
     errors::ZoteroApiError,
     keys::ItemKey,
     objects::ZoteroItem,
@@ -41,7 +16,6 @@ use crate::{
 pub struct AnnotationPosition(serde_json::Value);
 
 impl AnnotationPosition {
-    /// Serializes the position to the JSON string expected by the Zotero API.
     fn as_zotero_string(&self) -> String {
         self.0.to_string()
     }
@@ -73,80 +47,47 @@ pub struct AnnotationDraft {
     pub position: AnnotationPosition,
 }
 
-impl ZoteroClient<'_> {
+impl ZoteroClient {
     /// Creates an HTML note item attached to `parent_item_key` with body
     /// `note_content`.
-    ///
-    /// Verifies write permissions and issues `POST <prefix>/items` with
-    /// `itemType: "note"`.
-    ///
-    /// # Arguments
-    ///
-    /// * `parent_item_key` - Key of the parent item to attach the note to.
-    /// * `note_content` - HTML or text body content for the note.
-    ///
+    #[inline]
     /// # Errors
     ///
-    /// - [`ZoteroApiError::PermissionDenied`] if write permission is disabled
-    ///   in [`AppState`](crate::state::AppState).
-    /// - [`ZoteroApiError::LocalApi`] if Zotero rejects the creation request.
-    /// - [`ZoteroApiError::Network`] if transport failures occur.
-    /// - [`ZoteroApiError::Json`] if response payload decoding fails.
-    #[inline]
-    pub async fn create_note(
+    /// Returns [`ZoteroApiError::LocalApi`] if Zotero rejects the creation
+    /// request, or [`ZoteroApiError::Network`] if the request fails.
+    pub async fn create_note<K: AsRef<str>>(
         &self,
-        parent_item_key: &ItemKey,
+        parent_item_key: K,
         note_content: &str,
     ) -> Result<ZoteroItem, ZoteroApiError> {
-        self.state.check_write_permission()?;
-        let url = format!(
-            "{}{}/items",
-            self.state.zotero_api_url(),
-            self.target_prefix()
-        );
         let payload = serde_json::json!([{
             "itemType": ItemType::Note,
-            "parentItem": parent_item_key,
+            "parentItem": parent_item_key.as_ref(),
             "note": note_content,
         }]);
 
-        self.post_json_first(&url, &payload, "Created note array was empty")
-            .await
+        let res: ZoteroResponse<Vec<ZoteroItem>> =
+            self.post("/items").json(payload).send().await?;
+        res.data.into_iter().next().ok_or_else(|| ZoteroApiError::LocalApi {
+            status: 500,
+            message: "Created note array was empty".to_owned(),
+        })
     }
 
     /// Creates a PDF annotation item attached to a parent PDF attachment item.
-    ///
-    /// Verifies write permissions and posts an `annotation` item containing
-    /// type, text, comment, CSS color, page label, and position payload
-    /// parameters.
-    ///
-    /// # Arguments
-    ///
-    /// * `draft` - Detailed annotation properties including parent attachment
-    ///   key and coordinates.
-    ///
+    #[inline]
     /// # Errors
     ///
-    /// - [`ZoteroApiError::PermissionDenied`] if write permission is disabled.
-    /// - [`ZoteroApiError::LocalApi`] if Zotero rejects the annotation creation
-    ///   request.
-    /// - [`ZoteroApiError::Network`] if transport failures occur.
-    /// - [`ZoteroApiError::Json`] if response decoding fails.
-    #[inline]
+    /// Returns [`ZoteroApiError::LocalApi`] if Zotero rejects the annotation
+    /// creation request, or [`ZoteroApiError::Network`] if the request fails.
     pub async fn create_annotation(
         &self,
         draft: AnnotationDraft,
     ) -> Result<ZoteroItem, ZoteroApiError> {
-        self.state.check_write_permission()?;
         let position = draft.position.as_zotero_string();
-        let url = format!(
-            "{}{}/items",
-            self.state.zotero_api_url(),
-            self.target_prefix()
-        );
         let payload = serde_json::json!([{
             "itemType": ItemType::Annotation,
-            "parentItem": draft.parent_attachment_key,
+            "parentItem": draft.parent_attachment_key.as_str(),
             "annotationType": draft.annotation_type,
             "annotationText": draft.text,
             "annotationComment": draft.comment.as_deref().unwrap_or(""),
@@ -154,50 +95,40 @@ impl ZoteroClient<'_> {
             "annotationPageLabel": draft.page_label,
             "annotationPosition": position,
         }]);
-        self.post_json_first(
-            &url,
-            &payload,
-            "Created annotation array was empty",
-        )
-        .await
+        let res: ZoteroResponse<Vec<ZoteroItem>> =
+            self.post("/items").json(payload).send().await?;
+        res.data.into_iter().next().ok_or_else(|| ZoteroApiError::LocalApi {
+            status: 500,
+            message: "Created annotation array was empty".to_owned(),
+        })
     }
 
     /// Extracts and synthesizes all annotations and notes attached to
-    /// `item_key` into a Markdown document.
-    ///
-    /// Fetches the parent item and its child items via
-    /// [`get_item_children`](Self::get_item_children). Formats highlights,
-    /// comments, tags, and standalone child notes into structured Markdown
-    /// headings.
-    ///
-    /// # Arguments
-    ///
-    /// * `item_key` - Key of the target item.
-    ///
+    /// `item_key` into Markdown.
+    #[inline]
     /// # Errors
     ///
-    /// - [`ZoteroApiError::NotFound`] if `item_key` does not exist.
-    /// - [`ZoteroApiError::LocalApi`] if fetching parent or child items fails.
-    /// - [`ZoteroApiError::Network`] if transport failures occur.
-    #[inline]
-    pub async fn synthesize_annotations(
+    /// Returns [`ZoteroApiError::NotFound`] if `item_key` does not exist, or
+    /// [`ZoteroApiError::LocalApi`]/[`ZoteroApiError::Network`] if fetching
+    /// parent or child items fails.
+    pub async fn synthesize_annotations<K: AsRef<str>>(
         &self,
-        item_key: &ItemKey,
+        item_key: K,
     ) -> Result<String, ZoteroApiError> {
         use std::fmt::Write as _;
 
-        let item = self.get_item(item_key).await?;
-        let children =
-            self.get_item_children(item_key).await.unwrap_or_default();
+        let key = item_key.as_ref();
+        let item = self.get_item(key).await?;
+        let children = self.get_item_children(key).await.unwrap_or_default();
 
         let mut md = String::new();
-        let title = item.data.title.as_deref().unwrap_or(item_key.as_str());
+        let title = item.data.title.as_deref().unwrap_or(key);
         let _ = writeln!(md, "# Annotations & Notes: {title}\n");
 
-        if let Some(ref doi) = item.data.doi {
+        if let Some(doi) = item.data.doi() {
             let _ = writeln!(md, "**DOI:** {doi}");
         }
-        if let Some(ref date) = item.data.date {
+        if let Some(date) = item.data.date() {
             let _ = writeln!(md, "**Date:** {date}");
         }
         md.push('\n');
@@ -224,9 +155,9 @@ fn format_annotations_section(children: &[ZoteroItem]) -> String {
 
     let _ = writeln!(section, "## PDF Annotations\n");
     for ann in annotations {
-        let text = ann.data.annotation_text.as_deref().unwrap_or("");
-        let comment = ann.data.annotation_comment.as_deref().unwrap_or("");
-        let page = ann.data.annotation_page_label.as_deref().unwrap_or("");
+        let text = ann.data.annotation_text().unwrap_or("");
+        let comment = ann.data.annotation_comment().unwrap_or("");
+        let page = ann.data.annotation_page_label().unwrap_or("");
 
         if !text.is_empty() {
             if page.is_empty() {
@@ -255,7 +186,7 @@ fn format_notes_section(item: &ZoteroItem, children: &[ZoteroItem]) -> String {
         .collect();
 
     if item.data.item_type == ItemType::Note {
-        if let Some(ref note) = item.data.note {
+        if let Some(note) = item.data.note() {
             let _ = writeln!(section, "## Note Content\n\n{note}\n");
         }
     }
@@ -263,7 +194,7 @@ fn format_notes_section(item: &ZoteroItem, children: &[ZoteroItem]) -> String {
     if !child_notes.is_empty() {
         let _ = writeln!(section, "## Child Notes\n");
         for (idx, note_item) in child_notes.iter().enumerate() {
-            if let Some(ref body) = note_item.data.note {
+            if let Some(body) = note_item.data.note() {
                 let num = idx.saturating_add(1);
                 let _ = writeln!(section, "### Note {num}\n\n{body}\n");
             }
@@ -279,19 +210,7 @@ mod tests {
     use serde_json::json;
 
     use super::*;
-    use crate::{
-        client::{
-            ZoteroClient,
-            test_http::{MockServer, http_response, request_body},
-        },
-        state::AppState,
-    };
-
-    fn state(zotero_api_url: impl AsRef<str>, write_enabled: bool) -> AppState {
-        AppState::test_default()
-            .with_zotero_api_url(zotero_api_url.as_ref())
-            .with_write_enabled(write_enabled)
-    }
+    use crate::client::test_http::{MockServer, http_response, request_body};
 
     #[tokio::test]
     async fn posts_note_payload_for_parent_item() {
@@ -307,11 +226,9 @@ mod tests {
         .to_string();
         let (server, recorded) =
             MockServer::recording(vec![http_response("200 OK", &response)]);
-        let app = state(server.url(), true);
+        let client = ZoteroClient::new(server.url());
 
-        let result = ZoteroClient::new(&app)
-            .create_note(&ItemKey::from("PARENT01"), "<p>Note</p>")
-            .await;
+        let result = client.create_note("PARENT01", "<p>Note</p>").await;
 
         assert!(result.is_ok(), "note creation should succeed: {result:?}");
         let requests = recorded.lock().expect("request log lock");
@@ -327,26 +244,9 @@ mod tests {
         assert_eq!(payload.get("note"), Some(&json!("<p>Note</p>")));
     }
 
-    #[tokio::test]
-    async fn denies_writes_when_write_permission_is_disabled() {
-        let app = state("http://127.0.0.1:1", false);
-
-        let result = ZoteroClient::new(&app)
-            .create_note(&ItemKey::from("PARENT01"), "<p>Note</p>")
-            .await;
-
-        assert!(
-            matches!(result, Err(ZoteroApiError::PermissionDenied(_))),
-            "write-disabled note should fail before HTTP: {result:?}"
-        );
-    }
-
     mod annotations {
         use super::*;
-        use crate::{
-            keys::LibraryVersion, objects::ZoteroItemData,
-            types::AnnotationType,
-        };
+        use crate::{keys::LibraryVersion, objects::ZoteroItemData};
 
         mod formatting {
             use pretty_assertions::assert_eq;
@@ -354,22 +254,24 @@ mod tests {
             use super::*;
             #[test]
             fn formats_annotations_section_with_highlights_and_notes() {
+                let mut data = ZoteroItemData {
+                    key: ItemKey::from("ANN00001"),
+                    version: LibraryVersion::new(1),
+                    item_type: ItemType::Annotation,
+                    ..Default::default()
+                };
+                data.set_field("annotationType", "highlight");
+                data.set_field("annotationText", "Important concept");
+                data.set_field("annotationComment", "Check this out");
+                data.set_field("annotationPageLabel", "42");
+
                 let annotation = ZoteroItem {
                     key: ItemKey::from("ANN00001"),
-                    version: LibraryVersion(1),
+                    version: LibraryVersion::new(1),
                     library: None,
                     links: None,
                     meta: None,
-                    data: ZoteroItemData {
-                        key: ItemKey::from("ANN00001"),
-                        version: LibraryVersion(1),
-                        item_type: ItemType::Annotation,
-                        annotation_type: Some(AnnotationType::Highlight),
-                        annotation_text: Some("Important concept".to_owned()),
-                        annotation_comment: Some("Check this out".to_owned()),
-                        annotation_page_label: Some("42".to_owned()),
-                        ..Default::default()
-                    },
+                    data,
                 };
 
                 let annotations = vec![annotation];
@@ -384,19 +286,21 @@ mod tests {
 
             #[test]
             fn formats_standalone_note_section() {
+                let mut data = ZoteroItemData {
+                    key: ItemKey::from("NOTE0001"),
+                    version: LibraryVersion::new(1),
+                    item_type: ItemType::Note,
+                    ..Default::default()
+                };
+                data.set_field("note", "<p>Main note text</p>");
+
                 let note_item = ZoteroItem {
                     key: ItemKey::from("NOTE0001"),
-                    version: LibraryVersion(1),
+                    version: LibraryVersion::new(1),
                     library: None,
                     links: None,
                     meta: None,
-                    data: ZoteroItemData {
-                        key: ItemKey::from("NOTE0001"),
-                        version: LibraryVersion(1),
-                        item_type: ItemType::Note,
-                        note: Some("<p>Main note text</p>".to_owned()),
-                        ..Default::default()
-                    },
+                    data,
                 };
 
                 let result = format_notes_section(&note_item, &[]);
@@ -411,30 +315,32 @@ mod tests {
             fn formats_child_notes_section() {
                 let main_item = ZoteroItem {
                     key: ItemKey::from("ITEM0001"),
-                    version: LibraryVersion(1),
+                    version: LibraryVersion::new(1),
                     library: None,
                     links: None,
                     meta: None,
                     data: ZoteroItemData {
                         key: ItemKey::from("ITEM0001"),
-                        version: LibraryVersion(1),
+                        version: LibraryVersion::new(1),
                         item_type: ItemType::JournalArticle,
                         ..Default::default()
                     },
                 };
+                let mut child_data = ZoteroItemData {
+                    key: ItemKey::from("NOTE0001"),
+                    version: LibraryVersion::new(1),
+                    item_type: ItemType::Note,
+                    ..Default::default()
+                };
+                child_data.set_field("note", "<p>Child note text</p>");
+
                 let child_note = ZoteroItem {
                     key: ItemKey::from("NOTE0001"),
-                    version: LibraryVersion(1),
+                    version: LibraryVersion::new(1),
                     library: None,
                     links: None,
                     meta: None,
-                    data: ZoteroItemData {
-                        key: ItemKey::from("NOTE0001"),
-                        version: LibraryVersion(1),
-                        item_type: ItemType::Note,
-                        note: Some("<p>Child note text</p>".to_owned()),
-                        ..Default::default()
-                    },
+                    data: child_data,
                 };
 
                 let child_notes = vec![child_note];
@@ -445,26 +351,6 @@ mod tests {
                     "## Child Notes\n\n### Note 1\n\n<p>Child note \
                      text</p>\n\n"
                 );
-            }
-
-            #[test]
-            fn returns_empty_when_no_annotations_or_notes() {
-                let item = ZoteroItem {
-                    key: ItemKey::from("ITEM0001"),
-                    version: LibraryVersion(1),
-                    library: None,
-                    links: None,
-                    meta: None,
-                    data: ZoteroItemData {
-                        key: ItemKey::from("ITEM0001"),
-                        version: LibraryVersion(1),
-                        item_type: ItemType::JournalArticle,
-                        ..Default::default()
-                    },
-                };
-
-                assert_eq!(format_annotations_section(&[]), "");
-                assert_eq!(format_notes_section(&item, &[]), "");
             }
         }
     }

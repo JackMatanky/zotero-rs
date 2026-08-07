@@ -40,7 +40,7 @@ use rmcp::{
 };
 use schemars::JsonSchema;
 use serde::Deserialize;
-use zotero_api::{CitationKey, CollectionKey, ZoteroClient};
+use zotero_api::{CitationKey, CollectionKey};
 
 use super::tags::SearchByTagArgs;
 use crate::{ZoteroMcpServer, response::json_result};
@@ -380,7 +380,7 @@ impl ZoteroMcpServer {
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let offset = args.start.unwrap_or(0);
         let limit = args.limit.unwrap_or(20);
-        let client = ZoteroClient::new(&self.state);
+        let client = self.state.zotero_client();
         Ok(json_result(
             client
                 .search_items(
@@ -407,7 +407,7 @@ impl ZoteroMcpServer {
         &self,
         args: SearchByCitationKeyArgs,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let client = ZoteroClient::new(&self.state);
+        let client = self.state.zotero_client();
         Ok(json_result(
             client
                 .search_by_citation_key(&CitationKey::from(args.citekey))
@@ -432,7 +432,7 @@ impl ZoteroMcpServer {
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let offset = args.start.unwrap_or(0);
         let limit = args.limit.unwrap_or(20);
-        let client = ZoteroClient::new(&self.state);
+        let client = self.state.zotero_client();
         Ok(json_result(
             client
                 .advanced_search(
@@ -460,7 +460,7 @@ impl ZoteroMcpServer {
         &self,
         args: FindDuplicatesArgs,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let client = ZoteroClient::new(&self.state);
+        let client = self.state.zotero_client();
         Ok(json_result(
             client
                 .find_duplicates(
@@ -485,7 +485,7 @@ impl ZoteroMcpServer {
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let offset = args.start.unwrap_or(0);
         let limit = args.limit.unwrap_or(100).min(500);
-        let client = ZoteroClient::new(&self.state);
+        let client = self.state.zotero_client();
         Ok(json_result(
             client
                 .get_library_coverage(

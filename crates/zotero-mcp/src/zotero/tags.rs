@@ -40,7 +40,7 @@ use rmcp::{
 };
 use schemars::JsonSchema;
 use serde::Deserialize;
-use zotero_api::{ItemKey, TagName, ZoteroClient};
+use zotero_api::{ItemKey, TagName};
 
 use crate::{
     ZoteroMcpServer,
@@ -202,7 +202,7 @@ impl ZoteroMcpServer {
         args: ListTagsArgs,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let limit = args.limit.unwrap_or(100);
-        let client = ZoteroClient::new(&self.state);
+        let client = self.state.zotero_client();
         Ok(json_result(client.list_tags(limit).await))
     }
 
@@ -221,7 +221,7 @@ impl ZoteroMcpServer {
         args: SearchByTagArgs,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let limit = args.limit.unwrap_or(20);
-        let client = ZoteroClient::new(&self.state);
+        let client = self.state.zotero_client();
         let tag: TagName = args.tag.into();
         Ok(json_result(client.search_by_tag(&tag, limit).await))
     }
@@ -240,7 +240,10 @@ impl ZoteroMcpServer {
         &self,
         args: BatchUpdateTagsArgs,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let client = ZoteroClient::new(&self.state);
+        if let Err(e) = self.state.check_write_permission() {
+            return Ok(text_error(&e));
+        }
+        let client = self.state.zotero_client();
         let item_keys: Vec<ItemKey> =
             args.item_keys.into_iter().map(Into::into).collect();
         let add: Vec<TagName> = args
@@ -276,7 +279,10 @@ impl ZoteroMcpServer {
         &self,
         args: RenameTagArgs,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let client = ZoteroClient::new(&self.state);
+        if let Err(e) = self.state.check_write_permission() {
+            return Ok(text_error(&e));
+        }
+        let client = self.state.zotero_client();
         let old_tag: TagName = args.old_tag.into();
         let new_tag: TagName = args.new_tag.into();
         match client.rename_tag(&old_tag, &new_tag).await {
@@ -301,7 +307,10 @@ impl ZoteroMcpServer {
         &self,
         args: DeleteTagsArgs,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let client = ZoteroClient::new(&self.state);
+        if let Err(e) = self.state.check_write_permission() {
+            return Ok(text_error(&e));
+        }
+        let client = self.state.zotero_client();
         let tags: Vec<TagName> =
             args.tags.into_iter().map(Into::into).collect();
         match client.delete_tags(&tags).await {

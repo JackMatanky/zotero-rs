@@ -2,14 +2,12 @@
 //!
 //! [`AppState`] bundles the configured backend URLs and a shared
 //! [`reqwest::Client`], plus the write-permission gate that every mutating
-//! operation checks before touching the Zotero library. This module also
-//! provides [`AppState::send_with_retry`], the single retry policy used by all
-//! three backend clients.
+//! operation checks before touching the Zotero library.
 //!
 //! # Examples
 //!
 //! ```
-//! use zotero_api::AppState;
+//! use zotero_mcp::AppState;
 //! let state = AppState::from_env();
 //! assert!(!state.is_write_enabled());
 //! ```
@@ -18,25 +16,20 @@ use std::{
     env,
     path::{Path, PathBuf},
     sync::{Arc, RwLock},
-    time::Duration,
 };
 
-use reqwest::{Client, RequestBuilder, Response, StatusCode};
+use reqwest::{Client, Response};
 use tokio::sync::OnceCell;
-
-use crate::{
-    errors::ZoteroApiError,
-    security::SecurityConfig,
-    semantic_search::{
-        EmbeddingProvider, FastEmbedProvider, SemanticIndex, resolve_db_path,
-        resolve_model_cache_dir,
-    },
+use zotero_api::{
+    ZoteroApiError,
     sqlite::{LocalZoteroDb, find_zotero_db},
 };
+use zotero_semantic::{
+    EmbeddingProvider, FastEmbedProvider, SemanticIndex, resolve_db_path,
+    resolve_model_cache_dir,
+};
 
-const RETRY_MAX_ATTEMPTS: u32 = 3;
-const RETRY_BASE_DELAY: Duration = Duration::from_millis(200);
-const RETRY_MAX_DELAY: Duration = Duration::from_secs(5);
+use crate::security::SecurityConfig;
 
 /// Cached handle to a Zotero `SQLite` database for a single library.
 #[derive(Clone, Debug)]
@@ -114,6 +107,40 @@ pub struct AppState {
 }
 
 impl AppState {
+    /// Constructs a [`zotero_api::ZoteroClient`] configured with current state
+    /// parameters.
+    #[must_use]
+    #[inline]
+    pub fn zotero_client(&self) -> zotero_api::ZoteroClient {
+        let mut client = zotero_api::ZoteroClient::new(&self.zotero_api_url)
+            .with_client(self.client.clone());
+        if let Some(key) = self.local_write_key() {
+            client = client.with_api_key(key);
+        }
+        if let Some(server_id) = self.server_id() {
+            client = client.with_server_id(server_id);
+        }
+        client
+    }
+
+    /// Constructs a [`zotero_api::BetterBibtexClient`] configured with current
+    /// state parameters.
+    #[must_use]
+    #[inline]
+    pub fn better_bibtex_client(&self) -> zotero_api::BetterBibtexClient {
+        zotero_api::BetterBibtexClient::new(&self.better_bibtex_url)
+            .with_client(self.client.clone())
+    }
+
+    /// Constructs a [`zotero_api::BetterNotesClient`] configured with current
+    /// state parameters.
+    #[must_use]
+    #[inline]
+    pub fn better_notes_client(&self) -> zotero_api::BetterNotesClient {
+        zotero_api::BetterNotesClient::new(&self.better_notes_url)
+            .with_client(self.client.clone())
+    }
+
     /// Builds an [`AppState`] from environment variables.
     ///
     /// Reads backend URLs and feature gate configuration from the environment:
@@ -498,41 +525,6 @@ impl AppState {
         self.security.check_template_name_size(name)
     }
 
-    /// Sends `req`, retrying transient failures with exponential backoff.
-    ///
-    /// Retries on `5xx` responses, HTTP 429, timeouts, and connect errors, up
-    /// to [`RETRY_MAX_ATTEMPTS`] attempts total, doubling the delay from
-    /// [`RETRY_BASE_DELAY`] and capping it at [`RETRY_MAX_DELAY`]. Returns the
-    /// first [`Response`] that isn't a transient failure, or the final
-    /// attempt's outcome once retries are exhausted.
-    ///
-    /// # Errors
-    ///
-    /// - [`Network`] if every attempt fails at the transport level
-    ///
-    /// [`Network`]: ZoteroApiError::Network
-    pub(crate) async fn send_with_retry(
-        &self,
-        req: RequestBuilder,
-    ) -> Result<Response, ZoteroApiError> {
-        let mut delay = RETRY_BASE_DELAY;
-        for _ in 1..RETRY_MAX_ATTEMPTS {
-            let Some(attempt_req) = req.try_clone() else {
-                return req.send().await.map_err(Into::into);
-            };
-            match attempt_req.send().await {
-                Ok(resp) if !is_transient_status(resp.status()) => {
-                    return Ok(resp);
-                }
-                Err(e) if !is_transient_error(&e) => return Err(e.into()),
-                Ok(_) | Err(_) => {}
-            }
-            tokio::time::sleep(delay).await;
-            delay = delay.saturating_mul(2).min(RETRY_MAX_DELAY);
-        }
-        req.send().await.map_err(Into::into)
-    }
-
     /// Reads HTTP `resp` up to `max_bytes`, returning the body text.
     ///
     /// # Errors
@@ -584,16 +576,6 @@ impl AppState {
     #[inline]
     pub fn security(&self) -> &SecurityConfig {
         &self.security
-    }
-
-    /// Returns the Zotero Local HTTP API base URL.
-    pub(crate) fn zotero_api_url(&self) -> &str {
-        &self.zotero_api_url
-    }
-
-    /// Returns the Better `BibTeX` JSON-RPC base URL.
-    pub(crate) fn better_bibtex_url(&self) -> &str {
-        &self.better_bibtex_url
     }
 
     /// Returns the Better Notes bridge base URL.
@@ -726,7 +708,7 @@ impl AppState {
     }
 }
 
-#[cfg(any(test, feature = "test-util"))]
+#[cfg(test)]
 impl AppState {
     #[must_use]
     #[inline]
@@ -864,23 +846,11 @@ impl AppState {
     }
 }
 
-fn is_transient_status(status: StatusCode) -> bool {
-    status.is_server_error() || status == StatusCode::TOO_MANY_REQUESTS
-}
-
-fn is_transient_error(err: &reqwest::Error) -> bool {
-    err.is_timeout() || err.is_connect()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     mod fixtures {
-        use std::{
-            io::{Read, Write},
-            net::TcpListener,
-        };
 
         #[test]
         fn verifies_app_state_getters_and_builders() {
@@ -906,28 +876,6 @@ mod tests {
         pub(super) fn test_state(write_enabled: bool) -> AppState {
             AppState::test_default().with_write_enabled(write_enabled)
         }
-
-        /// Spawns a background thread serving one canned raw HTTP response
-        /// per accepted connection, in order. Returns the bound
-        /// `http://host:port` base URL.
-        pub(super) fn mock_server(responses: Vec<&'static str>) -> String {
-            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-            let addr = listener.local_addr().unwrap();
-            std::thread::spawn(move || {
-                let mut it = responses.into_iter();
-                while let (Some(resp), Ok((mut stream, _))) =
-                    (it.next(), listener.accept())
-                {
-                    let mut buf = [0_u8; 1024];
-                    let _ = stream.read(&mut buf);
-                    let _ = stream.write_all(resp.as_bytes());
-                }
-            });
-            format!("http://{addr}")
-        }
-    }
-    mod from_env {
-        use std::env;
 
         use pretty_assertions::assert_eq;
 
@@ -959,24 +907,6 @@ mod tests {
             } else {
                 env::remove_var("ZOTERO_CONNECTOR_COMPAT");
             }
-        }
-    }
-
-    mod is_transient_status {
-        use super::*;
-
-        #[test]
-        fn classifies_5xx_and_429_as_transient() {
-            assert!(is_transient_status(StatusCode::INTERNAL_SERVER_ERROR));
-            assert!(is_transient_status(StatusCode::BAD_GATEWAY));
-            assert!(is_transient_status(StatusCode::TOO_MANY_REQUESTS));
-        }
-
-        #[test]
-        fn classifies_success_and_non_429_client_errors_as_not_transient() {
-            assert!(!is_transient_status(StatusCode::OK));
-            assert!(!is_transient_status(StatusCode::NOT_FOUND));
-            assert!(!is_transient_status(StatusCode::BAD_REQUEST));
         }
     }
 
@@ -1047,96 +977,6 @@ mod tests {
             let result = state.check_html_size(&html);
 
             assert!(matches!(result, Err(ZoteroApiError::InputRejected(_))));
-        }
-    }
-
-    mod send_with_retry {
-        use pretty_assertions::assert_eq;
-
-        use super::{
-            super::*,
-            fixtures::{mock_server, test_state},
-        };
-
-        #[tokio::test]
-        async fn recovers_after_transient_5xx_errors() {
-            // Arrange
-            let base = mock_server(vec![
-                "HTTP/1.1 503 Service Unavailable\r\nContent-Length: \
-                 0\r\nConnection: close\r\n\r\n",
-                "HTTP/1.1 503 Service Unavailable\r\nContent-Length: \
-                 0\r\nConnection: close\r\n\r\n",
-                "HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: \
-                 close\r\n\r\nok",
-            ]);
-            let state = test_state(false);
-            let url = format!("{base}/");
-
-            // Act
-            let resp =
-                state.send_with_retry(state.client.get(&url)).await.unwrap();
-
-            // Assert
-            assert_eq!(resp.status(), StatusCode::OK);
-        }
-
-        #[tokio::test]
-        async fn returns_immediately_on_non_transient_status() {
-            // Arrange: only one response is queued — a second accept()
-            // would hang if a 404 were incorrectly retried.
-            let base = mock_server(vec![
-                "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: \
-                 close\r\n\r\n",
-            ]);
-            let state = test_state(false);
-            let url = format!("{base}/");
-
-            // Act
-            let resp =
-                state.send_with_retry(state.client.get(&url)).await.unwrap();
-
-            // Assert
-            assert_eq!(resp.status(), StatusCode::NOT_FOUND);
-        }
-
-        #[tokio::test]
-        async fn returns_last_response_after_exhausting_retries_on_persistent_5xx()
-         {
-            // Arrange: every attempt (RETRY_MAX_ATTEMPTS of them) stays
-            // transient, so the final attempt's response is still returned
-            // rather than an error.
-            let responses =
-                vec![
-                    "HTTP/1.1 503 Service Unavailable\r\nContent-Length: \
-                     0\r\nConnection: close\r\n\r\n";
-                    usize::try_from(RETRY_MAX_ATTEMPTS).unwrap_or(3)
-                ];
-            let base = mock_server(responses);
-            let state = test_state(false);
-            let url = format!("{base}/");
-
-            // Act
-            let resp =
-                state.send_with_retry(state.client.get(&url)).await.unwrap();
-
-            // Assert
-            assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
-        }
-
-        #[tokio::test]
-        async fn returns_network_error_after_exhausting_retries_on_connection_refused()
-         {
-            // Arrange: port 0 is never a live listener, so every attempt is
-            // refused — exercises is_transient_error's connect-error branch.
-            let state = test_state(false);
-            let url = "http://127.0.0.1:0/";
-
-            // Act
-            let err =
-                state.send_with_retry(state.client.get(url)).await.unwrap_err();
-
-            // Assert
-            assert!(matches!(err, ZoteroApiError::Network(_)));
         }
     }
 }

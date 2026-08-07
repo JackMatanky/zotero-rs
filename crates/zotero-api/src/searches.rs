@@ -1,32 +1,9 @@
 //! Saved search management and execution.
-//!
-//! Provides types and client methods for retrieving, executing, creating, and
-//! deleting saved searches in a Zotero library.
-//!
-//! # Key Types
-//!
-//! - [`SavedSearch`]: Saved search query representation.
-//!
-//! # Examples
-//!
-//! ```no_run
-//! use zotero_api::{AppState, ZoteroClient};
-//!
-//! # async fn run() -> Result<(), Box<dyn std::error::Error>> {
-//! let state = AppState::from_env();
-//! let client = ZoteroClient::new(&state);
-//! let searches = client.list_searches().await?;
-//! for s in searches {
-//!     println!("Saved search: {} ({})", s.name, s.key);
-//! }
-//! # Ok(())
-//! # }
-//! ```
 
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    client::ZoteroClient,
+    client::{ZoteroClient, ZoteroResponse},
     errors::ZoteroApiError,
     keys::LibraryVersion,
     objects::{BatchWriteResponse, ZoteroItem},
@@ -46,146 +23,93 @@ pub struct SavedSearch {
     pub conditions: Vec<serde_json::Value>,
 }
 
-impl ZoteroClient<'_> {
+impl ZoteroClient {
     /// Lists all saved search filters configured in the target library.
-    ///
-    /// Queries `GET <prefix>/searches`. Returns a list of [`SavedSearch`]
-    /// objects containing search keys, display names, and condition arrays.
-    ///
+    #[inline]
     /// # Errors
     ///
-    /// - [`ZoteroApiError::LocalApi`] if Zotero responds with a non-2xx status.
-    /// - [`ZoteroApiError::Network`] if transport failures occur.
-    /// - [`ZoteroApiError::Json`] if saved search payload decoding fails.
-    #[inline]
+    /// Returns [`ZoteroApiError::LocalApi`]/[`ZoteroApiError::Network`]/
+    /// [`ZoteroApiError::Json`] if the request fails.
     pub async fn list_searches(
         &self,
     ) -> Result<Vec<SavedSearch>, ZoteroApiError> {
-        let url = format!(
-            "{}{}/searches",
-            self.state.zotero_api_url(),
-            self.target_prefix()
-        );
-        self.get_json(&url).await
+        let res: ZoteroResponse<Vec<SavedSearch>> =
+            self.get("/searches").send().await?;
+        Ok(res.data)
     }
 
-    /// Fetches a single saved search definition by its unique search key.
-    ///
-    /// Queries `GET <prefix>/searches/<key>`.
-    ///
-    /// # Arguments
-    ///
-    /// * `key` - Eight-character saved search key identifier.
-    ///
+    /// Fetches a single saved search definition by key.
+    #[inline]
     /// # Errors
     ///
-    /// - [`ZoteroApiError::LocalApi`] if Zotero responds with a non-2xx status
-    ///   code.
-    /// - [`ZoteroApiError::Network`] if transport failures occur.
-    /// - [`ZoteroApiError::Json`] if the saved search object cannot be decoded.
-    #[inline]
-    pub async fn get_search(
+    /// Returns [`ZoteroApiError::LocalApi`]/[`ZoteroApiError::Network`]/
+    /// [`ZoteroApiError::Json`] if the request fails.
+    pub async fn get_search<K: AsRef<str>>(
         &self,
-        key: &str,
+        key: K,
     ) -> Result<SavedSearch, ZoteroApiError> {
-        let url = format!(
-            "{}{}/searches/{key}",
-            self.state.zotero_api_url(),
-            self.target_prefix()
-        );
-        self.get_json(&url).await
+        let key_str = key.as_ref();
+        let res: ZoteroResponse<SavedSearch> =
+            self.get(format!("/searches/{key_str}")).send().await?;
+        Ok(res.data)
     }
 
     /// Executes a saved search on the Zotero server and returns matching items.
-    ///
-    /// Queries `GET <prefix>/searches/<key>/items`, leveraging Zotero desktop's
-    /// server-side search engine.
-    ///
-    /// # Arguments
-    ///
-    /// * `key` - Eight-character key of the saved search to execute.
-    ///
+    #[inline]
     /// # Errors
     ///
-    /// - [`ZoteroApiError::LocalApi`] if Zotero returns a non-2xx status code.
-    /// - [`ZoteroApiError::Network`] if transport failures occur.
-    /// - [`ZoteroApiError::Json`] if response item payload decoding fails.
-    #[inline]
-    pub async fn execute_saved_search(
+    /// Returns [`ZoteroApiError::LocalApi`]/[`ZoteroApiError::Network`]/
+    /// [`ZoteroApiError::Json`] if the request fails.
+    pub async fn execute_saved_search<K: AsRef<str>>(
         &self,
-        key: &str,
+        key: K,
     ) -> Result<Vec<ZoteroItem>, ZoteroApiError> {
-        let url = format!(
-            "{}{}/searches/{key}/items",
-            self.state.zotero_api_url(),
-            self.target_prefix()
-        );
-        self.get_json(&url).await
+        let key_str = key.as_ref();
+        let res: ZoteroResponse<Vec<ZoteroItem>> =
+            self.get(format!("/searches/{key_str}/items")).send().await?;
+        Ok(res.data)
     }
 
     /// Batch-creates new saved search definitions in the library.
-    ///
-    /// Verifies write permissions and issues a `POST` request to
-    /// `<prefix>/searches` with an array of search definition payloads.
-    ///
-    /// # Arguments
-    ///
-    /// * `searches` - Slice of raw JSON search objects (name and conditions).
-    ///
+    #[inline]
     /// # Errors
     ///
-    /// - [`ZoteroApiError::PermissionDenied`] if write permission is disabled
-    ///   in [`AppState`](crate::state::AppState).
-    /// - [`ZoteroApiError::LocalApi`] if Zotero rejects the creation request.
-    /// - [`ZoteroApiError::Network`] if transport failures occur.
-    /// - [`ZoteroApiError::Json`] if response decoding fails.
-    #[inline]
+    /// Returns [`ZoteroApiError::LocalApi`] if Zotero rejects the creation
+    /// request, or [`ZoteroApiError::Network`] if the request fails.
     pub async fn create_searches(
         &self,
         searches: &[serde_json::Value],
     ) -> Result<BatchWriteResponse, ZoteroApiError> {
-        self.state.check_write_permission()?;
-        let url = format!(
-            "{}{}/searches",
-            self.state.zotero_api_url(),
-            self.target_prefix()
-        );
-        let req = self
-            .apply_auth_headers(self.state.client().post(&url).json(searches));
-        let resp = self.state.send_with_retry(req).await?;
-        Ok(self.ensure_success(resp).await?.json().await?)
+        let res: ZoteroResponse<BatchWriteResponse> = self
+            .post("/searches")
+            .json(serde_json::json!(searches))
+            .send()
+            .await?;
+        Ok(res.data)
     }
 
     /// Batch-deletes saved searches by key in a single request.
-    ///
-    /// Verifies write permissions and issues `DELETE
-    /// <prefix>/searches?searchKey=K1,K2,...` with optimistic version
-    /// concurrency validation.
-    ///
-    /// # Arguments
-    ///
-    /// * `keys` - Slice of saved search key strings to delete.
-    /// * `version` - Current library version required for concurrency checks.
-    ///
+    #[inline]
     /// # Errors
     ///
-    /// - [`ZoteroApiError::PermissionDenied`] if write permission is disabled.
-    /// - [`ZoteroApiError::LocalApi`] if Zotero returns a non-2xx status code.
-    /// - [`ZoteroApiError::Network`] if transport failures occur.
-    #[inline]
-    pub async fn delete_searches(
+    /// Returns [`ZoteroApiError::LocalApi`]/[`ZoteroApiError::Network`] if
+    /// Zotero rejects the deletion request.
+    pub async fn delete_searches<K: AsRef<str>, V: Into<u64>>(
         &self,
-        keys: &[String],
-        version: LibraryVersion,
+        keys: &[K],
+        version: V,
     ) -> Result<(), ZoteroApiError> {
-        self.state.check_write_permission()?;
-        let keys_str = keys.join(",");
-        let url = format!(
-            "{}{}/searches?searchKey={keys_str}",
-            self.state.zotero_api_url(),
-            self.target_prefix()
-        );
-        self.delete(&url, version).await
+        let keys_str = keys
+            .iter()
+            .map(std::convert::AsRef::as_ref)
+            .collect::<Vec<_>>()
+            .join(",");
+        self.delete_req("/searches")
+            .query("searchKey", keys_str)
+            .unmodified_since_version(version.into())
+            .send_unit()
+            .await?;
+        Ok(())
     }
 }
 
@@ -194,10 +118,7 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     use super::*;
-    use crate::{
-        client::test_http::{MockServer, http_response},
-        state::AppState,
-    };
+    use crate::client::test_http::{MockServer, http_response};
 
     #[tokio::test]
     async fn parses_list_searches_response() {
@@ -212,8 +133,7 @@ mod tests {
         .to_string();
 
         let server = MockServer::new(vec![http_response("200 OK", &json_resp)]);
-        let state = AppState::test_default().with_zotero_api_url(server.url());
-        let client = ZoteroClient::new(&state);
+        let client = ZoteroClient::new(server.url());
 
         let searches = client.list_searches().await.unwrap();
         assert_eq!(searches.len(), 1);

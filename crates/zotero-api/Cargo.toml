@@ -11,14 +11,13 @@ keywords = ["bibliography", "bibtex", "zotero"]
 categories = ["api-bindings"]
 
 [dependencies]
-fastembed.workspace = true
-lopdf.workspace = true
+lopdf = { workspace = true, optional = true }
 md-5.workspace = true
-pdf-extract.workspace = true
+pdf-extract = { workspace = true, optional = true }
 reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-sqlx.workspace = true
+sqlx = { workspace = true, optional = true }
 thiserror.workspace = true
 tokio.workspace = true
 tracing.workspace = true
@@ -35,6 +34,10 @@ tempfile.workspace = true
 # zotero-mcp's own test suite can build fixtures against this crate without
 # those helpers being part of the normal public API. Never enabled outside
 # `cfg(test)` or a dev-dependency declaration.
+default = []
+full = ["pdf", "sqlite"]
+pdf = ["dep:lopdf", "dep:pdf-extract"]
+sqlite = ["dep:sqlx"]
 test-util = []
 
 [lints]

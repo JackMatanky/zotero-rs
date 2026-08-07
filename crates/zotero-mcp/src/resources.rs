@@ -227,7 +227,7 @@ impl ZoteroMcpServer {
         &self,
         uri: &str,
     ) -> Result<rmcp::model::ReadResourceResult, rmcp::ErrorData> {
-        let client = ZoteroClient::new(&self.state);
+        let client = self.state.zotero_client();
         if uri == "zotero://collections" {
             return client
                 .get_collections()
@@ -369,7 +369,7 @@ fn text_resource(uri: &str, text: &str) -> rmcp::model::ReadResourceResult {
 /// * Unknown sub-path or extra path segments - Returns invalid parameters error
 ///   ([`unknown_resource`]).
 async fn read_item_resource(
-    client: &ZoteroClient<'_>,
+    client: &ZoteroClient,
     uri: &str,
     rest: &str,
 ) -> Result<rmcp::model::ReadResourceResult, rmcp::ErrorData> {
@@ -432,7 +432,7 @@ async fn read_item_resource(
 /// * Malformed sub-path or extra path segments - Returns invalid parameters
 ///   error ([`unknown_resource`]).
 async fn read_collection_resource(
-    client: &ZoteroClient<'_>,
+    client: &ZoteroClient,
     uri: &str,
     rest: &str,
 ) -> Result<rmcp::model::ReadResourceResult, rmcp::ErrorData> {
@@ -486,9 +486,9 @@ fn unknown_resource(uri: &str) -> rmcp::ErrorData {
 #[cfg(test)]
 mod tests {
     use serde_json::json;
-    use zotero_api::AppState;
 
     use super::*;
+    use crate::state::AppState;
 
     mod fixtures {
         use std::{

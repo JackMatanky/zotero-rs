@@ -166,7 +166,8 @@ impl ItemType {
     /// Returns `true` if this item type is eligible for search and embedding
     /// indexing: everything except attachments, notes, and annotations.
     #[inline]
-    pub(crate) fn is_indexable(&self) -> bool {
+    #[must_use]
+    pub fn is_indexable(&self) -> bool {
         !matches!(self, Self::Attachment | Self::Note | Self::Annotation)
     }
 }
@@ -302,7 +303,7 @@ impl From<AnnotationType> for String {
 /// round-tripping.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(from = "String", into = "String")]
-pub(crate) enum CreatorType {
+pub enum CreatorType {
     /// Primary author or creator (`author`).
     Author,
     /// Editor (`editor`).
@@ -424,7 +425,7 @@ impl From<CollectionParent> for serde_json::Value {
     Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize,
 )]
 #[serde(from = "u8", into = "u8")]
-pub(crate) enum TagOrigin {
+pub enum TagOrigin {
     /// Tag explicitly created by a user (`0`).
     #[default]
     User,

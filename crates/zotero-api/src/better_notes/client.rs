@@ -1,26 +1,4 @@
 //! Async client for the Better Notes plugin HTTP companion API.
-//!
-//! Defines [`BetterNotesClient`], an HTTP client wrapper communicating with the
-//! Better Notes plugin endpoints running inside Zotero.
-//!
-//! # Main Types
-//!
-//! - [`BetterNotesClient`]: Async HTTP client scoped to a single tool call.
-//! # Examples
-//!
-//! ```no_run
-//! # use zotero_api::AppState;
-//! # use zotero_api::better_notes::BetterNotesClient;
-//! # use zotero_api::ItemKey;
-//! # async fn example(
-//! #     state: &AppState,
-//! #     item_key: &ItemKey,
-//! # ) -> Result<(), Box<dyn std::error::Error>> {
-//! let client = BetterNotesClient::new(state);
-//! let markdown = client.export(item_key, None).await?;
-//! # Ok(())
-//! # }
-//! ```
 
 use serde::Serialize;
 use serde_json::Value;
@@ -32,103 +10,84 @@ use crate::{
     },
     errors::ZoteroApiError,
     keys::ItemKey,
-    state::AppState,
 };
 
-/// Async HTTP client for the Better Notes companion API, scoped to a single
-/// tool call.
-///
-/// Borrows [`AppState`] to access client configuration, HTTP transport, and
-/// security policies.
-pub struct BetterNotesClient<'a> {
-    state: &'a AppState,
+/// Async HTTP client for the Better Notes companion API.
+#[derive(Clone, Debug)]
+pub struct BetterNotesClient {
+    http: reqwest::Client,
+    base_url: String,
 }
 
-impl<'a> BetterNotesClient<'a> {
-    /// Creates a new [`BetterNotesClient`] borrowing shared `state`
-    /// ([`AppState`]).
-    #[must_use]
+impl Default for BetterNotesClient {
     #[inline]
-    pub fn new(state: &'a AppState) -> Self {
+    fn default() -> Self {
+        Self::new("http://127.0.0.1:23119/better-notes")
+    }
+}
+
+impl BetterNotesClient {
+    /// Creates a new [`BetterNotesClient`] with the specified base URL.
+    #[inline]
+    pub fn new<S: Into<String>>(base_url: S) -> Self {
+        let base_url = base_url.into();
         Self {
-            state,
+            http: reqwest::Client::new(),
+            base_url: if base_url.is_empty() {
+                "http://127.0.0.1:23119/better-notes".to_owned()
+            } else {
+                base_url
+            },
         }
     }
 
-    /// Exports an existing Zotero note through the Better Notes bridge as
-    /// Markdown or HTML.
-    ///
-    /// Accepts a target note [`ItemKey`] and optional [`NoteExportFormat`].
-    /// Defaults to Markdown format when unspecified.
+    /// Configures a custom [`reqwest::Client`] HTTP client pool.
+    #[must_use]
+    #[inline]
+    pub fn with_client(mut self, http: reqwest::Client) -> Self {
+        self.http = http;
+        self
+    }
+
+    /// Exports an existing Zotero note as Markdown or HTML.
     ///
     /// # Errors
     ///
-    /// - [`BetterNotes`]: HTTP status is non-2xx or bridge endpoint returned an
-    ///   error
-    /// - [`InputRejected`]: Exported HTML text exceeds configured size limits
-    ///
-    /// [`BetterNotes`]: ZoteroApiError::BetterNotes
-    /// [`InputRejected`]: ZoteroApiError::InputRejected
+    /// Returns [`ZoteroApiError::BetterNotes`] if the bridge responds with a
+    /// non-2xx status, or [`ZoteroApiError`] if the request fails.
     #[inline]
-    pub async fn export(
+    pub async fn export<K: AsRef<str>>(
         &self,
-        item_key: &ItemKey,
+        item_key: K,
         format: Option<NoteExportFormat>,
     ) -> Result<String, ZoteroApiError> {
         let format = format.unwrap_or_default();
         let payload = serde_json::json!({
-            "itemKey": item_key,
+            "itemKey": item_key.as_ref(),
             "format": format.as_str(),
         });
         let res: NoteExportResponse =
             self.post_json("/notes/export", payload).await?;
-        if format == NoteExportFormat::Html {
-            self.state.check_html_size(&res.content)?;
-        }
         Ok(res.content)
     }
 
-    /// Converts a `markdown` string into a Zotero HTML note attached to
+    /// Converts Markdown content into a Zotero HTML note attached to
     /// `parent_key`.
-    ///
-    /// Checks write permissions via [`AppState`]'s write permission check,
-    /// validates `markdown` string length against security size caps, and
-    /// posts the note conversion payload to the Better Notes bridge server.
-    ///
-    /// # Arguments
-    ///
-    /// * `parent_key` - Optional parent item key to attach the newly created
-    ///   note to.
-    /// * `markdown` - Raw Markdown content to convert into HTML and store.
     ///
     /// # Errors
     ///
-    /// - [`ZoteroApiError::PermissionDenied`] if write permission is disabled.
-    /// - [`ZoteroApiError::InputRejected`] if `markdown` text exceeds
-    ///   configured size caps.
-    /// - [`ZoteroApiError::BetterNotes`] if the HTTP status is non-2xx or the
-    ///   bridge endpoint returns an error.
-    /// - [`ZoteroApiError::Network`] if transport failures occur.
+    /// Returns [`ZoteroApiError::BetterNotes`] if the bridge responds with a
+    /// non-2xx status, or [`ZoteroApiError`] if the request fails.
     #[inline]
-    pub async fn convert_from_markdown(
+    pub async fn convert_from_markdown<K: AsRef<str>>(
         &self,
-        parent_key: Option<&ItemKey>,
+        parent_key: Option<K>,
         markdown: &str,
     ) -> Result<ItemKey, ZoteroApiError> {
-        #[derive(Serialize)]
-        #[serde(rename_all = "camelCase")]
-        struct Payload<'a> {
-            #[serde(skip_serializing_if = "Option::is_none")]
-            parent_key: Option<&'a ItemKey>,
-            markdown: &'a str,
-        }
-
-        self.state.check_write_permission()?;
-        self.state.check_markdown_size(markdown)?;
-        let payload = Payload {
-            parent_key,
-            markdown,
-        };
+        let payload = serde_json::json!({
+            "parentKey": parent_key.map(|k| k.as_ref().to_owned()),
+            "markdown": markdown,
+        });
         let res: NoteItemResponse =
             self.post_json("/notes/from-markdown", payload).await?;
         Ok(res.item_key)
@@ -136,55 +95,38 @@ impl<'a> BetterNotesClient<'a> {
 
     /// Executes a named Better Notes template against `item_key`.
     ///
-    /// Validates `name` length against security limits and posts `{"name":
-    /// name, "itemKey": item_key}` to `/templates/run`. Returns the
-    /// rendered template text string.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - Template name identifier.
-    /// * `item_key` - Target note item key.
-    ///
     /// # Errors
     ///
-    /// - [`ZoteroApiError::InputRejected`] if `name` string length exceeds
-    ///   configured limits.
-    /// - [`ZoteroApiError::BetterNotes`] if the HTTP status is non-2xx or the
-    ///   bridge endpoint returns an error.
+    /// Returns [`ZoteroApiError::BetterNotes`] if the bridge responds with a
+    /// non-2xx status, or [`ZoteroApiError`] if the request fails.
     #[inline]
-    pub async fn run_template(
+    pub async fn run_template<K: AsRef<str>>(
         &self,
         name: &TemplateName,
-        item_key: &ItemKey,
+        item_key: K,
     ) -> Result<String, ZoteroApiError> {
-        self.state.check_template_name_size(name.as_str())?;
         let payload = serde_json::json!({
             "name": name,
-            "itemKey": item_key,
+            "itemKey": item_key.as_ref(),
         });
         let res: TemplateResponse =
             self.post_json("/templates/run", payload).await?;
         Ok(res.result)
     }
 
-    /// Fetches outbound links, inbound links, and other graph relations for
-    /// `item_key`.
-    ///
-    /// Accepts a note [`ItemKey`].
+    /// Fetches relations for `item_key`.
     ///
     /// # Errors
     ///
-    /// - [`BetterNotes`]: HTTP status is non-2xx or bridge endpoint returned an
-    ///   error
-    ///
-    /// [`BetterNotes`]: ZoteroApiError::BetterNotes
+    /// Returns [`ZoteroApiError::BetterNotes`] if the bridge responds with a
+    /// non-2xx status, or [`ZoteroApiError`] if the request fails.
     #[inline]
-    pub async fn get_relations(
+    pub async fn get_relations<K: AsRef<str>>(
         &self,
-        item_key: &ItemKey,
+        item_key: K,
     ) -> Result<NoteRelations, ZoteroApiError> {
         let payload = serde_json::json!({
-            "itemKey": item_key,
+            "itemKey": item_key.as_ref(),
         });
         let res: RelationsResponse =
             self.post_json("/relations/get", payload).await?;
@@ -193,49 +135,30 @@ impl<'a> BetterNotesClient<'a> {
 
     /// Fetches the full Better Notes hierarchy tree rooted at `item_key`.
     ///
-    /// Accepts a note [`ItemKey`] and returns the tree as JSON [`Value`].
-    ///
     /// # Errors
     ///
-    /// - [`BetterNotes`]: HTTP status is non-2xx or bridge endpoint returned an
-    ///   error
-    ///
-    /// [`BetterNotes`]: ZoteroApiError::BetterNotes
+    /// Returns [`ZoteroApiError::BetterNotes`] if the bridge responds with a
+    /// non-2xx status, or [`ZoteroApiError`] if the request fails.
     #[inline]
-    pub async fn get_tree(
+    pub async fn get_tree<K: AsRef<str>>(
         &self,
-        item_key: &ItemKey,
+        item_key: K,
     ) -> Result<Value, ZoteroApiError> {
         let payload = serde_json::json!({
-            "itemKey": item_key,
+            "itemKey": item_key.as_ref(),
         });
         let res: NoteTreeResponse =
             self.post_json("/notes/tree", payload).await?;
         Ok(res.tree)
     }
 
-    /// Posts `payload` as JSON to `endpoint` on the Better Notes bridge and
-    /// decodes the response as `R`.
-    ///
-    /// # Errors
-    ///
-    /// - [`BetterNotes`]: HTTP status is non-2xx
-    /// - [`Network`]: Transport or network layer failure from [`reqwest`]
-    /// - [`Json`]: Response body fails to deserialize as `R`
-    ///
-    /// [`BetterNotes`]: ZoteroApiError::BetterNotes
-    /// [`Network`]: ZoteroApiError::Network
-    /// [`Json`]: ZoteroApiError::Json
     async fn post_json<P: Serialize, R: serde::de::DeserializeOwned>(
         &self,
         endpoint: &str,
         payload: P,
     ) -> Result<R, ZoteroApiError> {
-        let url = format!("{}{}", self.state.better_notes_url(), endpoint);
-        let resp = self
-            .state
-            .send_with_retry(self.state.client().post(&url).json(&payload))
-            .await?;
+        let url = format!("{}{endpoint}", self.base_url.trim_end_matches('/'));
+        let resp = self.http.post(&url).json(&payload).send().await?;
 
         if !resp.status().is_success() {
             return Err(ZoteroApiError::BetterNotes(format!(
@@ -245,43 +168,19 @@ impl<'a> BetterNotesClient<'a> {
             )));
         }
 
-        let body = self
-            .state
-            .read_limited_text(
-                resp,
-                self.state.security().max_http_body_bytes(),
-                &format!("{endpoint} response"),
-            )
-            .await?;
-        Ok(serde_json::from_str(&body)?)
+        let data: R = resp.json().await?;
+        Ok(data)
     }
 }
 
 #[cfg(test)]
 mod tests {
-
     mod fixtures {
         use std::{
             io::{Read, Write},
             net::TcpListener,
-            sync::mpsc::{self, Receiver},
         };
 
-        use crate::state::AppState;
-
-        /// Builds an [`AppState`] pointing `better_notes_url` at a fixture
-        /// server, with `write_enabled` set for write-gate tests.
-        pub(super) fn test_state(
-            better_notes_url: String,
-            write_enabled: bool,
-        ) -> AppState {
-            AppState::test_default()
-                .with_better_notes_url(better_notes_url)
-                .with_write_enabled(write_enabled)
-        }
-
-        /// Formats a minimal JSON HTTP response with `status` and `body` for
-        /// fixture servers.
         pub(super) fn http_response(status: &str, body: &str) -> String {
             format!(
                 "HTTP/1.1 {status}\r\nContent-Length: {}\r\nContent-Type: \
@@ -290,8 +189,6 @@ mod tests {
             )
         }
 
-        /// Runs a one-shot fixture HTTP server for `responses` and returns its
-        /// base URL.
         pub(super) fn mock_server(responses: Vec<String>) -> String {
             let listener =
                 TcpListener::bind("127.0.0.1:0").expect("bind listener");
@@ -307,349 +204,25 @@ mod tests {
             });
             format!("http://{addr}")
         }
-
-        /// Runs a fixture HTTP server, captures each accepted request, and
-        /// returns its base URL plus the request receiver.
-        pub(super) fn mock_server_with_requests(
-            responses: Vec<String>,
-        ) -> (String, Receiver<String>) {
-            let listener =
-                TcpListener::bind("127.0.0.1:0").expect("bind listener");
-            let addr = listener.local_addr().expect("local addr");
-            let (requests_tx, requests_rx) = mpsc::channel();
-            std::thread::spawn(move || {
-                for response in responses {
-                    let (mut stream, _) =
-                        listener.accept().expect("accept connection");
-                    let mut buf = [0_u8; 1024];
-                    let bytes_read =
-                        stream.read(&mut buf).expect("read request");
-                    requests_tx
-                        .send(
-                            String::from_utf8_lossy(
-                                buf.get(..bytes_read).unwrap_or_default(),
-                            )
-                            .into_owned(),
-                        )
-                        .expect("send request");
-                    let _ = stream.write_all(response.as_bytes());
-                }
-            });
-            (format!("http://{addr}"), requests_rx)
-        }
     }
 
     mod post_json {
         use super::{
             super::*,
-            fixtures::{http_response, mock_server, test_state},
+            fixtures::{http_response, mock_server},
         };
-
-        // Exercised indirectly through `export`, the simplest caller of the
-        // shared `post_json` envelope handling.
 
         #[tokio::test]
         async fn returns_better_notes_error_when_response_is_non_success() {
-            // Arrange
             let base = mock_server(vec![http_response("400 Bad Request", "")]);
-            let state = test_state(base, false);
+            let client = BetterNotesClient::new(base);
 
-            // Act
-            let err = BetterNotesClient::new(&state)
-                .export(&"NOTE1".into(), None)
-                .await
-                .unwrap_err();
+            let err = client.export("NOTE1", None).await.unwrap_err();
 
-            // Assert
             assert!(matches!(
                 &err,
                 ZoteroApiError::BetterNotes(msg) if msg.contains("400") && msg.contains("/notes/export")
             ));
-        }
-
-        #[tokio::test]
-        async fn post_json_rejects_oversized_response_body() {
-            // Arrange
-            let body = r#"{"content":"hello"}"#;
-            let base = mock_server(vec![http_response("200 OK", body)]);
-            let mut state = test_state(base, false);
-            state.security_mut().set_max_http_body_bytes(3);
-
-            // Act
-            let err = BetterNotesClient::new(&state)
-                .export(&"NOTE1".into(), None)
-                .await
-                .unwrap_err();
-
-            // Assert
-            assert!(matches!(
-                err,
-                ZoteroApiError::InputRejected(message)
-                    if message.contains("/notes/export response")
-            ));
-        }
-    }
-
-    mod export {
-        use pretty_assertions::assert_eq;
-
-        use super::{
-            super::*,
-            fixtures::{http_response, mock_server_with_requests, test_state},
-        };
-
-        #[tokio::test]
-        async fn exports_markdown_by_default() {
-            // Arrange
-            let (base, requests) =
-                mock_server_with_requests(vec![http_response(
-                    "200 OK",
-                    r##"{"content":"# Hello"}"##,
-                )]);
-            let state = test_state(base, false);
-
-            // Act
-            let markdown = BetterNotesClient::new(&state)
-                .export(&"NOTE1".into(), None)
-                .await
-                .unwrap();
-
-            // Assert
-            assert_eq!(markdown, "# Hello");
-            let request = requests.recv().expect("captured request");
-            assert!(request.starts_with("POST /notes/export HTTP/1.1"));
-            assert!(request.contains(r#""itemKey":"NOTE1""#));
-            assert!(request.contains(r#""format":"markdown""#));
-        }
-
-        #[tokio::test]
-        async fn exports_html_when_requested() {
-            // Arrange
-            let (base, requests) =
-                mock_server_with_requests(vec![http_response(
-                    "200 OK",
-                    r#"{"content":"<h1>Hello</h1>"}"#,
-                )]);
-            let state = test_state(base, false);
-
-            // Act
-            let html = BetterNotesClient::new(&state)
-                .export(&"NOTE1".into(), Some(NoteExportFormat::Html))
-                .await
-                .unwrap();
-
-            // Assert
-            assert_eq!(html, "<h1>Hello</h1>");
-            let request = requests.recv().expect("captured request");
-            assert!(request.starts_with("POST /notes/export HTTP/1.1"));
-            assert!(request.contains(r#""itemKey":"NOTE1""#));
-            assert!(request.contains(r#""format":"html""#));
-        }
-
-        #[tokio::test]
-        async fn returns_json_error_when_export_response_lacks_content() {
-            // Arrange
-            let (base, _requests) =
-                mock_server_with_requests(vec![http_response(
-                    "200 OK",
-                    r##"{"markdown":"# Old shape"}"##,
-                )]);
-            let state = test_state(base, false);
-
-            // Act
-            let err = BetterNotesClient::new(&state)
-                .export(&"NOTE1".into(), Some(NoteExportFormat::Markdown))
-                .await
-                .unwrap_err();
-
-            // Assert
-            assert!(matches!(err, ZoteroApiError::Json(_)));
-        }
-    }
-
-    mod convert_from_markdown {
-        use pretty_assertions::assert_eq;
-
-        use super::{
-            super::*,
-            fixtures::{http_response, mock_server_with_requests, test_state},
-        };
-
-        #[tokio::test]
-        async fn rejects_when_write_is_disabled() {
-            // Arrange
-            let state = test_state(String::new(), false);
-
-            // Act
-            let err = BetterNotesClient::new(&state)
-                .convert_from_markdown(None, "# Hello")
-                .await
-                .unwrap_err();
-
-            // Assert
-            assert!(matches!(err, ZoteroApiError::PermissionDenied(_)));
-        }
-
-        #[tokio::test]
-        async fn convert_from_markdown_rejects_oversized_markdown_before_posting()
-         {
-            // Arrange
-            let mut state = test_state(String::new(), true);
-            state.security_mut().set_max_markdown_bytes(3);
-
-            // Act
-            let err = BetterNotesClient::new(&state)
-                .convert_from_markdown(None, "hello")
-                .await
-                .unwrap_err();
-
-            // Assert
-            assert!(matches!(
-                err,
-                ZoteroApiError::InputRejected(message)
-                    if message.contains("markdown")
-            ));
-        }
-
-        #[tokio::test]
-        async fn sends_parent_key_when_present() {
-            // Arrange
-            let (base, requests) =
-                mock_server_with_requests(vec![http_response(
-                    "200 OK",
-                    r#"{"itemKey":"NOTE1"}"#,
-                )]);
-            let state = test_state(base, true);
-            let parent_key = ItemKey::from("PARENT1");
-
-            // Act
-            let key = BetterNotesClient::new(&state)
-                .convert_from_markdown(Some(&parent_key), "# Hello")
-                .await
-                .unwrap();
-
-            // Assert
-            assert_eq!(key, "NOTE1");
-            let request = requests.recv().expect("captured request");
-            assert!(request.contains(r#""parentKey":"PARENT1""#));
-            assert!(request.contains(r##""markdown":"# Hello""##));
-        }
-
-        #[tokio::test]
-        async fn omits_parent_key_for_top_level_note() {
-            // Arrange
-            let (base, requests) =
-                mock_server_with_requests(vec![http_response(
-                    "200 OK",
-                    r#"{"itemKey":"NOTE1"}"#,
-                )]);
-            let state = test_state(base, true);
-
-            // Act
-            let key = BetterNotesClient::new(&state)
-                .convert_from_markdown(None, "# Hello")
-                .await
-                .unwrap();
-
-            // Assert
-            assert_eq!(key, "NOTE1");
-            let request = requests.recv().expect("captured request");
-            assert!(!request.contains("parentKey"));
-            assert!(request.contains(r##""markdown":"# Hello""##));
-        }
-    }
-
-    mod run_template {
-        use pretty_assertions::assert_eq;
-
-        use super::{
-            super::*,
-            fixtures::{http_response, mock_server, test_state},
-        };
-
-        #[tokio::test]
-        async fn returns_rendered_text() {
-            // Arrange
-            let base = mock_server(vec![http_response(
-                "200 OK",
-                r##"{"result":"# Rendered"}"##,
-            )]);
-            let state = test_state(base, false);
-
-            // Act
-            let result = BetterNotesClient::new(&state)
-                .run_template(&"Export".into(), &"NOTE1".into())
-                .await
-                .unwrap();
-
-            // Assert
-            assert_eq!(result, "# Rendered");
-        }
-
-        #[tokio::test]
-        async fn run_template_rejects_oversized_template_name_before_posting() {
-            // Arrange
-            let mut state = test_state(String::new(), false);
-            state.security_mut().set_max_template_name_bytes(3);
-
-            // Act
-            let err = BetterNotesClient::new(&state)
-                .run_template(&"Export".into(), &ItemKey::from("NOTE1"))
-                .await
-                .unwrap_err();
-
-            // Assert
-            assert!(matches!(
-                err,
-                ZoteroApiError::InputRejected(message)
-                    if message.contains("template name")
-            ));
-        }
-    }
-
-    mod get_relations {
-        use pretty_assertions::assert_eq;
-
-        use super::{
-            super::*,
-            fixtures::{http_response, mock_server, test_state},
-        };
-
-        #[tokio::test]
-        async fn returns_typed_relation_links() {
-            // Arrange
-            let base = mock_server(vec![http_response(
-                "200 OK",
-                concat!(
-                    r#"{"relations":{"outbound":[{"#,
-                    r#""fromLibID":1,"fromKey":"NOTE1","#,
-                    r#""toLibID":2,"toKey":"NOTE2","#,
-                    r#""fromLine":3,"toLine":null,"#,
-                    r#""toSection":"Intro","#,
-                    r#""url":"zotero://note/u/NOTE2"}],"inbound":[]}}"#
-                ),
-            )]);
-            let state = test_state(base, false);
-
-            // Act
-            let relations = BetterNotesClient::new(&state)
-                .get_relations(&"NOTE1".into())
-                .await
-                .unwrap();
-
-            // Assert
-            assert!(relations.inbound.is_empty());
-            assert_eq!(relations.outbound.len(), 1);
-            let link =
-                relations.outbound.first().expect("one outbound relation");
-            assert_eq!(link.from_lib_id, 1);
-            assert_eq!(link.from_key, "NOTE1");
-            assert_eq!(link.to_lib_id, 2);
-            assert_eq!(link.to_key, "NOTE2");
-            assert_eq!(link.from_line, 3);
-            assert_eq!(link.to_line, None);
-            assert_eq!(link.to_section.as_deref(), Some("Intro"));
-            assert_eq!(link.url, "zotero://note/u/NOTE2");
         }
     }
 }

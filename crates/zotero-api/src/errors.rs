@@ -60,8 +60,8 @@ pub enum ZoteroApiError {
     /// Local Zotero `SQLite` database could not be located or read.
     #[error("Local database error: {0}")]
     LocalDb(String),
-
     /// `SQLite` query or connection against the local Zotero database failed.
+    #[cfg(feature = "sqlite")]
     #[error("SQLite error: {0}")]
     Sqlite(#[from] sqlx::Error),
 

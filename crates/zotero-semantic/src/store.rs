@@ -1,30 +1,4 @@
 //! Persistence layer for the semantic search `SQLite` database.
-//!
-//! Manages the dedicated `embeddings.sqlite` database storing text chunks and
-//! binary vector embeddings. Operates independently from Zotero's main
-//! `zotero.sqlite` database.
-//!
-//! # Main Types
-//!
-//! - [`SemanticIndex`] - Read/write handle to the semantic search database.
-//! - [`StoredChunk`] - Decoded chunk ready for cosine similarity scanning.
-//! - [`NewChunk`] - Unsaved text chunk paired with its embedding vector.
-//! - [`SemanticIndexStats`] - Aggregate counts of indexed items and chunks.
-//!
-//! # Examples
-//!
-//! Opening a semantic index database handle:
-//!
-//! ```no_run
-//! use std::path::Path;
-//!
-//! use zotero_api::semantic_search::SemanticIndex;
-//!
-//! # async fn run() {
-//! let index =
-//!     SemanticIndex::open(Path::new("/tmp/embeddings.sqlite")).await.unwrap();
-//! # }
-//! ```
 
 use std::{path::Path, time::Duration};
 
@@ -32,24 +6,23 @@ use sqlx::{
     Row, SqlitePool,
     sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions},
 };
+use zotero_api::{ItemKey, ZoteroApiError};
 
-use crate::{
-    errors::ZoteroApiError, keys::ItemKey, semantic_search::Embedding,
-};
+use crate::Embedding;
 
 /// One stored chunk, decoded and ready for a cosine similarity scan.
 #[derive(Clone, Debug)]
 pub struct StoredChunk {
     /// Unique Zotero item key.
-    pub(crate) item_key: ItemKey,
+    pub item_key: ItemKey,
     /// Item title, if present.
-    pub(crate) title: Option<String>,
+    pub title: Option<String>,
     /// Zero-based index of the chunk within the item's text.
-    pub(crate) chunk_index: i64,
+    pub chunk_index: i64,
     /// Text content of the chunk.
-    pub(crate) chunk_text: String,
+    pub chunk_text: String,
     /// Decoded L2-normalized vector embedding.
-    pub(crate) embedding: Embedding,
+    pub embedding: Embedding,
 }
 
 /// A text chunk ready to be embedded and stored in the semantic index.
@@ -66,9 +39,9 @@ pub struct NewChunk {
 #[derive(Clone, Debug, serde::Serialize)]
 pub struct SemanticIndexStats {
     /// Total number of distinct indexed Zotero items.
-    pub(crate) indexed_items: i64,
+    pub indexed_items: i64,
     /// Total number of stored text chunks across all items.
-    pub(crate) indexed_chunks: i64,
+    pub indexed_chunks: i64,
 }
 
 /// Writable handle to the semantic search side-car database.
@@ -80,16 +53,12 @@ pub struct SemanticIndex {
 impl SemanticIndex {
     /// Opens (creating parent directories and the database file if missing) the
     /// `SQLite` database.
-    ///
-    /// Sets WAL mode, enables foreign key constraints, and ensures the table
-    /// schema exists.
-    ///
+    #[inline]
     /// # Errors
     ///
-    /// - [`ZoteroApiError::Io`] if parent directories cannot be created.
-    /// - [`ZoteroApiError::Sqlite`] if database opening or schema creation
-    ///   fails.
-    #[inline]
+    /// Returns [`ZoteroApiError::Io`] if parent directories cannot be created,
+    /// or [`ZoteroApiError::Sqlite`] if database opening or schema creation
+    /// fails.
     pub async fn open(db_path: &Path) -> Result<Self, ZoteroApiError> {
         if let Some(parent) = db_path.parent() {
             tokio::fs::create_dir_all(parent).await?;
@@ -143,13 +112,13 @@ impl SemanticIndex {
         Ok(())
     }
 
-    /// Returns the stored `date_modified` for `item_key`, or [`None`] if the
-    /// item is not indexed.
-    ///
+    /// Returns the stored `date_modified` for `item_key`, or [`None`] if not
+    /// indexed.
     /// # Errors
     ///
-    /// - [`ZoteroApiError::Sqlite`] on query failure
-    pub(crate) async fn stored_date_modified(
+    /// Returns [`ZoteroApiError::Sqlite`] on query failure.
+    #[inline]
+    pub async fn stored_date_modified(
         &self,
         item_key: &ItemKey,
     ) -> Result<Option<String>, ZoteroApiError> {
@@ -167,21 +136,10 @@ impl SemanticIndex {
 
     /// Replaces all chunks for `item_key` with `chunks` in a single
     /// transaction.
-    ///
-    /// Upserts the `items` metadata row, deletes any existing `chunks` rows for
-    /// the item, and inserts the new chunk batch.
-    ///
-    /// # Arguments
-    ///
-    /// * `item_key` - Unique Zotero item key.
-    /// * `title` - Optional item title.
-    /// * `date_modified` - Optional modification timestamp string from Zotero.
-    /// * `chunks` - Slice of chunks to insert.
-    ///
+    #[inline]
     /// # Errors
     ///
-    /// - [`ZoteroApiError::Sqlite`] on query or transaction failure.
-    #[inline]
+    /// Returns [`ZoteroApiError::Sqlite`] on query or transaction failure.
     pub async fn upsert_item(
         &self,
         item_key: &ItemKey,
@@ -231,11 +189,11 @@ impl SemanticIndex {
     }
 
     /// Deletes `item_key` and its chunks (cascades via foreign key).
-    ///
     /// # Errors
     ///
-    /// - [`ZoteroApiError::Sqlite`] on query failure
-    pub(crate) async fn delete_item(
+    /// Returns [`ZoteroApiError::Sqlite`] on query failure.
+    #[inline]
+    pub async fn delete_item(
         &self,
         item_key: &ItemKey,
     ) -> Result<(), ZoteroApiError> {
@@ -247,13 +205,11 @@ impl SemanticIndex {
     }
 
     /// Returns every currently-indexed item key.
-    ///
     /// # Errors
     ///
-    /// - [`ZoteroApiError::Sqlite`] on query failure
-    pub(crate) async fn all_item_keys(
-        &self,
-    ) -> Result<Vec<ItemKey>, ZoteroApiError> {
+    /// Returns [`ZoteroApiError::Sqlite`] on query failure.
+    #[inline]
+    pub async fn all_item_keys(&self) -> Result<Vec<ItemKey>, ZoteroApiError> {
         let rows = sqlx::query("SELECT item_key FROM items")
             .fetch_all(&self.pool)
             .await?;
@@ -263,12 +219,11 @@ impl SemanticIndex {
     }
 
     /// Loads every stored chunk, decoded and ready for a cosine scan.
-    ///
+    #[inline]
     /// # Errors
     ///
-    /// - [`ZoteroApiError::Sqlite`] on query failure
-    /// - [`ZoteroApiError::Embedding`] if a stored embedding BLOB is corrupt
-    #[inline]
+    /// Returns [`ZoteroApiError::Sqlite`] on query failure, or
+    /// [`ZoteroApiError::Embedding`] if a stored embedding BLOB is corrupt.
     pub async fn load_all_chunks(
         &self,
     ) -> Result<Vec<StoredChunk>, ZoteroApiError> {
@@ -294,11 +249,10 @@ impl SemanticIndex {
     }
 
     /// Returns aggregate item/chunk counts.
-    ///
+    #[inline]
     /// # Errors
     ///
-    /// - [`ZoteroApiError::Sqlite`] on query failure
-    #[inline]
+    /// Returns [`ZoteroApiError::Sqlite`] on query failure.
     pub async fn stats(&self) -> Result<SemanticIndexStats, ZoteroApiError> {
         let indexed_items: i64 = sqlx::query("SELECT COUNT(*) AS c FROM items")
             .fetch_one(&self.pool)
@@ -350,7 +304,7 @@ mod tests {
         loaded.sort_by_key(|c| c.chunk_index);
         assert_eq!(loaded.len(), 2);
         let first = loaded.first().unwrap();
-        assert_eq!(first.item_key, "ITEM1");
+        assert_eq!(first.item_key.as_str(), "ITEM1");
         assert_eq!(first.title, Some("Title 1".to_owned()));
         assert_eq!(first.chunk_text, "first chunk");
         assert_eq!(first.embedding, Embedding::from(vec![0.5, 0.5, 0.5]));
@@ -415,7 +369,7 @@ mod tests {
         )]);
         let remaining = index.load_all_chunks().await.unwrap();
         assert_eq!(remaining.len(), 1);
-        assert_eq!(remaining.first().unwrap().item_key, "ITEM2");
+        assert_eq!(remaining.first().unwrap().item_key.as_str(), "ITEM2");
         index.pool.close().await;
     }
 

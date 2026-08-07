@@ -46,7 +46,7 @@ use rmcp::{
 };
 use schemars::JsonSchema;
 use serde::Deserialize;
-use zotero_api::{ItemKey, ZoteroClient};
+use zotero_api::ItemKey;
 
 use crate::{
     ZoteroMcpServer,
@@ -180,7 +180,7 @@ impl ZoteroMcpServer {
         &self,
         args: GetRelatedItemsArgs,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let client = ZoteroClient::new(&self.state);
+        let client = self.state.zotero_client();
         Ok(json_result(
             client.get_related_items(&ItemKey::from(args.item_key)).await,
         ))
@@ -199,7 +199,10 @@ impl ZoteroMcpServer {
         &self,
         args: AddItemRelationArgs,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let client = ZoteroClient::new(&self.state);
+        if let Err(e) = self.state.check_write_permission() {
+            return Ok(text_error(&e));
+        }
+        let client = self.state.zotero_client();
         match client
             .add_item_relation(
                 &ItemKey::from(args.item_key),
@@ -225,7 +228,10 @@ impl ZoteroMcpServer {
         &self,
         args: RemoveItemRelationArgs,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let client = ZoteroClient::new(&self.state);
+        if let Err(e) = self.state.check_write_permission() {
+            return Ok(text_error(&e));
+        }
+        let client = self.state.zotero_client();
         match client
             .remove_item_relation(
                 &ItemKey::from(args.item_key),
@@ -242,10 +248,9 @@ impl ZoteroMcpServer {
 #[cfg(test)]
 mod tests {
     use serde_json::json;
-    use zotero_api::AppState;
 
     use super::*;
-    use crate::{ZoteroMcpServer, zotero::fixtures::*};
+    use crate::{ZoteroMcpServer, state::AppState, zotero::fixtures::*};
 
     mod related_items {
         use pretty_assertions::assert_eq;

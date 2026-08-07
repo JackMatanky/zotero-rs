@@ -20,11 +20,10 @@
 //! # Examples
 //!
 //! ```no_run
-//! use zotero_api::{AppState, ZoteroClient};
+//! use zotero_api::ZoteroClient;
 //!
 //! # async fn run() -> Result<(), zotero_api::ZoteroApiError> {
-//! let state = AppState::from_env();
-//! let client = ZoteroClient::new(&state);
+//! let client = ZoteroClient::new("http://127.0.0.1:23119/api");
 //! let status = client.check_status().await;
 //! println!("Status online: {}", status.online);
 //! # Ok(())
@@ -45,15 +44,14 @@ pub(crate) mod keys;
 pub(crate) mod metadata;
 pub(crate) mod notes;
 pub(crate) mod objects;
+#[cfg(feature = "pdf")]
 pub mod pdf;
 pub(crate) mod relations;
 pub(crate) mod search;
 pub(crate) mod searches;
-pub mod security;
-pub mod semantic_search;
 pub(crate) mod settings;
+#[cfg(feature = "sqlite")]
 pub mod sqlite;
-pub(crate) mod state;
 pub(crate) mod tags;
 pub(crate) mod types;
 
@@ -70,26 +68,30 @@ pub use deleted::DeletedObjectsResponse;
 pub use errors::ZoteroApiError;
 pub use items::TrashAction;
 pub use keys::{CitationKey, CollectionKey, ItemKey, LibraryVersion, TagName};
-pub use metadata::{IdentifierKind, ItemDraft, resolve_metadata};
+pub use metadata::{
+    IdentifierKind, ItemDraft, resolve_metadata, resolve_metadata_with_urls,
+};
 pub use notes::{AnnotationDraft, AnnotationPosition};
 pub use objects::{
     BatchWriteResponse, ItemLinks, ItemMeta, LibraryInfo, LocalApiStatus,
     ZoteroCollection, ZoteroItem,
 };
+#[cfg(feature = "pdf")]
 pub use pdf::*;
 pub use relations::RelatedItem;
 pub use search::{
-    JoinMode, PaginationInfo, SearchCondition, SearchField, SearchOperator,
-    SearchPage, SortField, SortOrder,
+    DuplicateGroup, DuplicateType, ItemQueryParams, JoinMode, LibraryCoverage,
+    LibraryCoveragePage, PaginationInfo, QuickSearchMode, SearchCondition,
+    SearchField, SearchOperator, SearchPage, SortDirection, SortField,
+    SortOrder,
 };
 pub use searches::SavedSearch;
-pub use security::{SecurityConfig, SecurityProfile};
-pub use semantic_search::{
-    Embedding, EmbeddingProvider, FastEmbedProvider, SemanticIndex,
-};
 pub use settings::SettingEntry;
+#[cfg(feature = "sqlite")]
 pub use sqlite::{
     FulltextHit, LocalZoteroDb, NoteAnnotationHit, find_zotero_db,
 };
-pub use state::AppState;
-pub use types::{AnnotationType, CollectionParent, ItemType, LinkMode};
+pub use types::{
+    AnnotationType, CollectionParent, CreatorType, ItemType, LinkMode,
+    TagOrigin,
+};

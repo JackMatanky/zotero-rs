@@ -1,82 +1,34 @@
 //! Query embedding and cosine similarity search scoring.
-//!
-//! This module takes a search query string, embeds it using an
-//! [`EmbeddingProvider`], and evaluates cosine similarity against all stored
-//! document chunks. Results are aggregated using a `MaxSim` strategy (retaining
-//! only the highest-scoring chunk per library item), filtered by a minimum
-//! similarity threshold, and sorted in descending order of similarity.
-//!
-//! # Main Types
-//!
-//! - [`SemanticSearchHit`] - Best-matching chunk for a single Zotero item.
-//!
-//! # Main Functions
-//!
-//! - [`search_library`] - Embeds a query string and returns ranked search hits.
-//!
-//! # Examples
-//!
-//! Performing a semantic search over in-memory chunks:
-//!
-//! ```no_run
-//! use std::sync::Arc;
-//!
-//! use zotero_api::semantic_search::{EmbeddingProvider, search_library};
-//!
-//! # async fn run(provider: Arc<dyn EmbeddingProvider>) {
-//! let hits =
-//!     search_library(&provider, &[], "rust async", 10, 0.3).await.unwrap();
-//! # }
-//! ```
 
 use std::{collections::HashMap, sync::Arc};
 
 use serde::Serialize;
+use zotero_api::{ItemKey, ZoteroApiError};
 
-use crate::{
-    errors::ZoteroApiError,
-    keys::ItemKey,
-    semantic_search::{EmbeddingProvider, store::StoredChunk},
-};
+use crate::{EmbeddingProvider, store::StoredChunk};
 
 /// Represents a semantic search match for a single item in the library.
-///
-/// Holds the highest-scoring chunk for an item along with its calculated
-/// similarity score and item metadata.
 #[derive(Clone, Debug, Serialize)]
 pub struct SemanticSearchHit {
     /// Unique Zotero item key.
-    pub(crate) item_key: ItemKey,
+    pub item_key: ItemKey,
     /// Item title, if available.
-    pub(crate) title: Option<String>,
+    pub title: Option<String>,
     /// Cosine similarity score between the query and this chunk.
-    pub(crate) similarity: f32,
+    pub similarity: f32,
     /// Zero-based index of the chunk within the item's text.
-    pub(crate) chunk_index: i64,
+    pub chunk_index: i64,
     /// Text content of the matching chunk.
-    pub(crate) chunk_text: String,
+    pub chunk_text: String,
 }
 
 /// Embeds a search query and returns ranked search hits across all stored
 /// chunks.
-///
-/// Scores `query` against `all_chunks` via cosine similarity, retains the top
-/// chunk per item (`MaxSim`), filters out scores below `min_similarity`, and
-/// returns up to `limit` hits sorted descending by similarity score.
-///
-/// # Arguments
-///
-/// * `provider` - Embedding provider backend.
-/// * `all_chunks` - Slice of preloaded stored chunks to evaluate.
-/// * `query` - Natural language search query string.
-/// * `limit` - Maximum number of hits to return.
-/// * `min_similarity` - Minimum similarity threshold for inclusion.
-///
+#[inline]
 /// # Errors
 ///
-/// - [`ZoteroApiError::Embedding`] if query embedding fails or task execution
-///   fails.
-#[inline]
+/// Returns [`ZoteroApiError::Embedding`] if query embedding fails or task
+/// execution fails.
 pub async fn search_library(
     provider: &Arc<dyn EmbeddingProvider>,
     all_chunks: &[StoredChunk],
@@ -130,10 +82,8 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     use super::*;
-    use crate::semantic_search::Embedding;
+    use crate::Embedding;
 
-    /// Deterministic test [`EmbeddingProvider`]: every text embeds to the
-    /// fixed vector supplied at construction, so tests fully control scores.
     #[derive(Debug)]
     struct FixedProvider {
         vector: Vec<f32>,
@@ -181,7 +131,7 @@ mod tests {
 
         assert_eq!(hits.len(), 1);
         let hit = hits.first().unwrap();
-        assert_eq!(hit.item_key, "ITEM1");
+        assert_eq!(hit.item_key.as_str(), "ITEM1");
         assert_eq!(hit.chunk_index, 0);
         assert!((hit.similarity - 1.0).abs() < 1e-6);
     }
@@ -217,7 +167,7 @@ mod tests {
             search_library(&provider, &chunks, "query", 2, 0.0).await.unwrap();
 
         assert_eq!(hits.len(), 2);
-        assert_eq!(hits.first().unwrap().item_key, "ITEM2");
-        assert_eq!(hits.get(1).unwrap().item_key, "ITEM3");
+        assert_eq!(hits.first().unwrap().item_key.as_str(), "ITEM2");
+        assert_eq!(hits.get(1).unwrap().item_key.as_str(), "ITEM3");
     }
 }

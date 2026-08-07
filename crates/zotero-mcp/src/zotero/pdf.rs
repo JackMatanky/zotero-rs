@@ -31,7 +31,7 @@ use rmcp::{
 use schemars::JsonSchema;
 use serde::Deserialize;
 use zotero_api::{
-    ItemKey, ItemType, LinkMode, ZoteroApiError, ZoteroClient, ZoteroItem,
+    ItemKey, ItemType, LinkMode, ZoteroApiError, ZoteroItem,
     pdf::{extract_pdf_outline, extract_pdf_pages},
 };
 
@@ -84,27 +84,27 @@ pub(crate) fn resolve_attachment_pdf_path(
         return None;
     }
 
-    if matches!(item.data.link_mode.as_ref(), Some(LinkMode::ImportedFile)) {
+    if item.data.link_mode() == Some(LinkMode::ImportedFile) {
         if let Some(path) = enclosure_file_path(item) {
             return Some(ResolvedPdfPath::Trusted(path));
         }
     }
 
-    if matches!(item.data.link_mode.as_ref(), Some(LinkMode::LinkedFile)) {
-        if let Some(path) =
-            item.data.path.as_deref().and_then(|path| {
-                resolve_linked_attachment_path(path, bridge_roots)
-            })
+    if item.data.link_mode() == Some(LinkMode::LinkedFile) {
+        if let Some(path) = item
+            .data
+            .path()
+            .and_then(|path| resolve_linked_attachment_path(path, bridge_roots))
         {
             return Some(ResolvedPdfPath::NeedsRootCheck(path));
         }
     }
 
-    if item.data.content_type.as_deref() == Some("application/pdf") {
-        if let Some(path) =
-            item.data.path.as_deref().and_then(|path| {
-                resolve_linked_attachment_path(path, bridge_roots)
-            })
+    if item.data.content_type() == Some("application/pdf") {
+        if let Some(path) = item
+            .data
+            .path()
+            .and_then(|path| resolve_linked_attachment_path(path, bridge_roots))
         {
             return Some(ResolvedPdfPath::NeedsRootCheck(path));
         }
@@ -410,7 +410,7 @@ impl ZoteroMcpServer {
         &self,
         args: GetPdfPathArgs,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let client = ZoteroClient::new(&self.state);
+        let client = self.state.zotero_client();
         let item_key = ItemKey::from(args.item_key);
         let item = match client.get_item(&item_key).await {
             Ok(item) => item,
@@ -420,8 +420,7 @@ impl ZoteroMcpServer {
         let bridge_roots = self.fetch_bridge_pdf_roots().await;
         let found_path = if item.data.item_type == ItemType::Attachment {
             item.data
-                .path
-                .as_deref()
+                .path()
                 .map(PathBuf::from)
                 .or_else(|| {
                     resolve_attachment_pdf_path(&item, &bridge_roots)
@@ -470,7 +469,7 @@ impl ZoteroMcpServer {
             );
         }
 
-        let client = ZoteroClient::new(&self.state);
+        let client = self.state.zotero_client();
         let item_key = ItemKey::from(item_key_or_path);
         let item = client.get_item(&item_key).await?;
 
@@ -548,10 +547,12 @@ impl ZoteroMcpServer {
 #[cfg(test)]
 mod tests {
     use serde_json::json;
-    use zotero_api::{AppState, SecurityConfig};
 
     use super::*;
-    use crate::{ZoteroMcpServer, zotero::fixtures::*};
+    use crate::{
+        ZoteroMcpServer, security::SecurityConfig, state::AppState,
+        zotero::fixtures::*,
+    };
 
     mod path_resolution {
         use pretty_assertions::assert_eq;

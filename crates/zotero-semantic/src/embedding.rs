@@ -1,52 +1,18 @@
 //! Vector representation, dot-product scoring, BLOB encoding, and local ONNX
 //! embedding.
-//!
-//! Defines the [`Embedding`] newtype wrapper for L2-normalized vector
-//! operations, binary serialization for `SQLite` storage, and the
-//! [`FastEmbedProvider`] struct for local inference.
-//!
-//! # Main Types
-//!
-//! - [`Embedding`] - L2-normalized `f32` vector with BLOB codec.
-//! - [`FastEmbedProvider`] - Local ONNX embedding provider backed by
-//!   `fastembed`.
-//!
-//! # Examples
-//!
-//! Creating and scoring embeddings:
-//!
-//! ```ignore
-//! use zotero_api::semantic_search::Embedding;
-//!
-//! let mut a = Embedding::from(vec![3.0, 4.0]);
-//! a.normalize();
-//! let b = Embedding::from(vec![0.6, 0.8]);
-//! assert_eq!(a.dot(&b), 1.0);
-//! ```
 
 use std::{path::Path, sync::Mutex};
 
 use fastembed::{EmbeddingModel, TextEmbedding, TextInitOptions};
+use zotero_api::ZoteroApiError;
 
-use crate::{errors::ZoteroApiError, semantic_search::EmbeddingProvider};
+use crate::EmbeddingProvider;
 
-/// The single fixed embedding model this server uses. `BGESmallENV15` is
-/// fastembed's own documented default (BAAI/bge-small-en-v1.5, 384
-/// dimensions): no query/document instruction-prefix handling required,
-/// small download (~130 MB), strong retrieval quality for the model size.
-/// Changing this requires deleting the existing index db (dimensions and
-/// vector space are incompatible across models); there is no per-model
-/// partitioning in this schema (see `store.rs`).
 const MODEL: EmbeddingModel = EmbeddingModel::BGESmallENV15;
-
-/// Number of texts embedded per `fastembed` batch call.
 const EMBED_BATCH_SIZE: usize = 32;
 
 /// Production [`EmbeddingProvider`] backed by a local ONNX model via
-/// `fastembed`. Model inference requires `&mut self` internally, so the
-/// model is held behind a [`Mutex`]; callers already run `embed` inside
-/// `tokio::task::spawn_blocking` (see `index.rs`/`search.rs`), so the lock is
-/// never held across an `.await`.
+/// `fastembed`.
 pub struct FastEmbedProvider {
     model: Mutex<TextEmbedding>,
 }
@@ -59,7 +25,8 @@ impl FastEmbedProvider {
     ///
     /// Returns [`ZoteroApiError::Embedding`] if model loading or downloading
     /// fails.
-    pub(crate) fn load(cache_dir: &Path) -> Result<Self, ZoteroApiError> {
+    #[inline]
+    pub fn load(cache_dir: &Path) -> Result<Self, ZoteroApiError> {
         let options = TextInitOptions::new(MODEL)
             .with_cache_dir(cache_dir.to_path_buf())
             .with_show_download_progress(false);
@@ -97,28 +64,13 @@ impl EmbeddingProvider for FastEmbedProvider {
 }
 
 /// A dense embedding vector produced by the model and stored in the index.
-///
-/// Newtype over `Vec<f32>` so dimensionality and normalization are handled
-/// at typed boundaries (BLOB decode, dot products) rather than as free
-/// `Vec<f32>` bookkeeping.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Embedding(Vec<f32>);
 
 impl Embedding {
     /// L2-normalizes the vector in place.
-    ///
-    /// A vector with a zero or negative norm squared is left unchanged.
-    ///
-    /// # Examples
-    ///
-    /// ```ignore
-    /// use zotero_api::semantic_search::Embedding;
-    ///
-    /// let mut embedding = Embedding::from(vec![3.0, 4.0]);
-    /// embedding.normalize();
-    /// assert_eq!(embedding, Embedding::from(vec![0.6, 0.8]));
-    /// ```
-    pub(crate) fn normalize(&mut self) {
+    #[inline]
+    pub fn normalize(&mut self) {
         let norm_sq: f32 = self.0.iter().map(|x| x * x).sum();
         if norm_sq <= 0.0 {
             return;
@@ -130,23 +82,9 @@ impl Embedding {
     }
 
     /// Calculates the dot product of two equal-length prenormalized vectors.
-    ///
-    /// For prenormalized vectors, the dot product equals their cosine
-    /// similarity. Returns `0.0` if vector lengths differ.
-    ///
-    /// # Examples
-    ///
-    /// ```ignore
-    /// use zotero_api::semantic_search::Embedding;
-    ///
-    /// let a = Embedding::from(vec![1.0, 0.0]);
-    /// let b = Embedding::from(vec![0.0, 1.0]);
-    /// assert_eq!(a.dot(&b), 0.0);
-    ///
-    /// let c = Embedding::from(vec![0.6, 0.8]);
-    /// assert_eq!(c.dot(&c), 1.0);
-    /// ```
-    pub(crate) fn dot(&self, other: &Embedding) -> f32 {
+    #[must_use]
+    #[inline]
+    pub fn dot(&self, other: &Embedding) -> f32 {
         if self.0.len() != other.0.len() {
             return 0.0;
         }
@@ -154,7 +92,9 @@ impl Embedding {
     }
 
     /// Encodes the vector as little-endian `f32` bytes for `BLOB` storage.
-    pub(crate) fn encode(&self) -> Vec<u8> {
+    #[must_use]
+    #[inline]
+    pub fn encode(&self) -> Vec<u8> {
         let mut buf = Vec::with_capacity(self.0.len().saturating_mul(4));
         for value in &self.0 {
             buf.extend_from_slice(&value.to_le_bytes());
@@ -173,11 +113,6 @@ impl From<Vec<f32>> for Embedding {
 impl TryFrom<&[u8]> for Embedding {
     type Error = ZoteroApiError;
 
-    /// Decodes little-endian `f32` bytes back into an embedding.
-    ///
-    /// # Errors
-    ///
-    /// - [`ZoteroApiError::Embedding`] if `bytes.len()` is not a multiple of 4
     #[inline]
     fn try_from(bytes: &[u8]) -> Result<Self, Self::Error> {
         let (chunks, remainder) = bytes.as_chunks::<4>();
