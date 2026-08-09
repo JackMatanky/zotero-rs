@@ -90,7 +90,7 @@ pub fn item_to_bibtex(item: &ZoteroItem, citekey: &str, style: &str) -> String {
     let entry_type = bibtex_entry_type(&item.data.item_type, is_biblatex);
 
     let key = if citekey.trim().is_empty() {
-        if let Some(citation_key) = item.data.citation_key() {
+        if let Some(citation_key) = item.data.citation_key.as_deref() {
             citation_key
         } else {
             item.data.key.as_str()
@@ -112,7 +112,7 @@ pub fn item_to_bibtex(item: &ZoteroItem, citekey: &str, style: &str) -> String {
 
     match item.data.item_type {
         ItemType::JournalArticle => {
-            if let Some(journal) = item.data.publication_title() {
+            if let Some(journal) = item.data.publication_title.as_deref() {
                 let _ = writeln!(
                     entry,
                     "  journal = {{{}}},",
@@ -121,14 +121,14 @@ pub fn item_to_bibtex(item: &ZoteroItem, citekey: &str, style: &str) -> String {
             }
         }
         ItemType::BookSection | ItemType::ConferencePaper => {
-            if let Some(booktitle) = item.data.publication_title() {
+            if let Some(booktitle) = item.data.publication_title.as_deref() {
                 let _ = writeln!(
                     entry,
                     "  booktitle = {{{}}},",
                     escape_bibtex(booktitle)
                 );
             }
-            if let Some(publisher) = item.data.publisher() {
+            if let Some(publisher) = item.data.publisher.as_deref() {
                 let _ = writeln!(
                     entry,
                     "  publisher = {{{}}},",
@@ -137,7 +137,7 @@ pub fn item_to_bibtex(item: &ZoteroItem, citekey: &str, style: &str) -> String {
             }
         }
         ItemType::Book => {
-            if let Some(publisher) = item.data.publisher() {
+            if let Some(publisher) = item.data.publisher.as_deref() {
                 let _ = writeln!(
                     entry,
                     "  publisher = {{{}}},",
@@ -146,7 +146,7 @@ pub fn item_to_bibtex(item: &ZoteroItem, citekey: &str, style: &str) -> String {
             }
         }
         ItemType::Report => {
-            if let Some(inst) = item.data.institution() {
+            if let Some(inst) = item.data.institution.as_deref() {
                 let _ = writeln!(
                     entry,
                     "  institution = {{{}}},",
@@ -158,7 +158,7 @@ pub fn item_to_bibtex(item: &ZoteroItem, citekey: &str, style: &str) -> String {
         | ItemType::BlogPost
         | ItemType::ForumPost
         | ItemType::Preprint => {
-            if let Some(site) = item.data.publication_title() {
+            if let Some(site) = item.data.publication_title.as_deref() {
                 if is_biblatex {
                     let _ = writeln!(
                         entry,
@@ -175,7 +175,7 @@ pub fn item_to_bibtex(item: &ZoteroItem, citekey: &str, style: &str) -> String {
             }
         }
         _ => {
-            if let Some(pub_title) = item.data.publication_title() {
+            if let Some(pub_title) = item.data.publication_title.as_deref() {
                 let _ = writeln!(
                     entry,
                     "  journal = {{{}}},",
@@ -184,7 +184,7 @@ pub fn item_to_bibtex(item: &ZoteroItem, citekey: &str, style: &str) -> String {
             }
         }
     }
-    if let Some(date) = item.data.date() {
+    if let Some(date) = item.data.date.as_deref() {
         let year = date.chars().take(4).collect::<String>();
         if year.chars().all(|c| c.is_ascii_digit()) && year.len() == 4 {
             let _ = writeln!(entry, "  year = {{{year}}},");
@@ -193,27 +193,27 @@ pub fn item_to_bibtex(item: &ZoteroItem, citekey: &str, style: &str) -> String {
         }
     }
 
-    if let Some(vol) = item.data.volume() {
+    if let Some(vol) = item.data.volume.as_deref() {
         let _ = writeln!(entry, "  volume = {{{}}},", escape_bibtex(vol));
     }
 
-    if let Some(issue) = item.data.issue() {
+    if let Some(issue) = item.data.issue.as_deref() {
         let _ = writeln!(entry, "  number = {{{}}},", escape_bibtex(issue));
     }
 
-    if let Some(pages) = item.data.pages() {
+    if let Some(pages) = item.data.pages.as_deref() {
         let _ = writeln!(entry, "  pages = {{{}}},", escape_bibtex(pages));
     }
 
-    if let Some(doi) = item.data.doi() {
+    if let Some(doi) = item.data.doi.as_deref() {
         let _ = writeln!(entry, "  doi = {{{}}},", escape_bibtex(doi));
     }
 
-    if let Some(url) = item.data.url() {
+    if let Some(url) = item.data.url.as_deref() {
         let _ = writeln!(entry, "  url = {{{}}},", escape_bibtex(url));
     }
 
-    if let Some(isbn) = item.data.isbn() {
+    if let Some(isbn) = item.data.isbn.as_deref() {
         let _ = writeln!(entry, "  isbn = {{{}}},", escape_bibtex(isbn));
     }
 

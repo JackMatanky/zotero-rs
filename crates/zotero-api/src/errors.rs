@@ -65,10 +65,8 @@ pub enum ZoteroApiError {
     #[error("SQLite error: {0}")]
     Sqlite(#[from] sqlx::Error),
 
-    /// Write operation attempted when write permission is disabled in
-    /// [`AppState`].
-    ///
-    /// [`AppState`]: crate::state::AppState
+    /// Write operation attempted while write permission is disabled by the
+    /// embedding application's security policy.
     #[error("Permission denied: {0}")]
     PermissionDenied(String),
 

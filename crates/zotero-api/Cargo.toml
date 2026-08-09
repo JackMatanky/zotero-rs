@@ -11,6 +11,7 @@ keywords = ["bibliography", "bibtex", "zotero"]
 categories = ["api-bindings"]
 
 [dependencies]
+bon.workspace = true
 lopdf = { workspace = true, optional = true }
 md-5.workspace = true
 pdf-extract = { workspace = true, optional = true }

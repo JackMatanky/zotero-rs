@@ -34,7 +34,8 @@ pub enum SortDirection {
 }
 
 /// Type-safe builder for Zotero Local API `/items` query parameters.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, bon::Builder)]
+#[builder(on(String, into))]
 pub struct ItemQueryParams {
     /// Free-text search query string (`q`).
     pub q: Option<String>,
@@ -54,87 +55,6 @@ pub struct ItemQueryParams {
     pub start: Option<usize>,
     /// Whether to include trashed items (`includeTrashed`).
     pub include_trashed: Option<bool>,
-}
-
-impl ItemQueryParams {
-    /// Creates a default query parameter builder.
-    #[must_use]
-    #[inline]
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// Sets the free-text search query string.
-    #[must_use]
-    #[inline]
-    pub fn q<S: Into<String>>(mut self, q: S) -> Self {
-        self.q = Some(q.into());
-        self
-    }
-
-    /// Sets the quick search mode.
-    #[must_use]
-    #[inline]
-    pub fn qmode(mut self, mode: QuickSearchMode) -> Self {
-        self.qmode = Some(mode);
-        self
-    }
-
-    /// Sets the item type filter.
-    #[must_use]
-    #[inline]
-    pub fn item_type(mut self, item_type: ItemType) -> Self {
-        self.item_type = Some(item_type);
-        self
-    }
-
-    /// Sets the tag filter.
-    #[must_use]
-    #[inline]
-    pub fn tag<S: Into<String>>(mut self, tag: S) -> Self {
-        self.tag = Some(tag.into());
-        self
-    }
-
-    /// Sets the sort field.
-    #[must_use]
-    #[inline]
-    pub fn sort<S: Into<String>>(mut self, sort: S) -> Self {
-        self.sort = Some(sort.into());
-        self
-    }
-
-    /// Sets the sort direction.
-    #[must_use]
-    #[inline]
-    pub fn direction(mut self, dir: SortDirection) -> Self {
-        self.direction = Some(dir);
-        self
-    }
-
-    /// Sets the page limit.
-    #[must_use]
-    #[inline]
-    pub fn limit(mut self, limit: usize) -> Self {
-        self.limit = Some(limit);
-        self
-    }
-
-    /// Sets the page start offset.
-    #[must_use]
-    #[inline]
-    pub fn start(mut self, start: usize) -> Self {
-        self.start = Some(start);
-        self
-    }
-
-    /// Sets whether to include trashed items.
-    #[must_use]
-    #[inline]
-    pub fn include_trashed(mut self, include: bool) -> Self {
-        self.include_trashed = Some(include);
-        self
-    }
 }
 
 /// Searchable item field in structured searches.
@@ -369,13 +289,13 @@ impl ZoteroClient {
         let page = self.search_items(key, None::<&str>, 0, 20).await?;
         let citekey_lc = key.to_lowercase();
         for item in page.items {
-            if let Some(native) = item.data.citation_key() {
+            if let Some(native) = item.data.citation_key.as_deref() {
                 if native.to_lowercase() == citekey_lc {
                     return Ok(Some(item));
                 }
                 continue;
             }
-            if let Some(extra) = item.data.extra() {
+            if let Some(extra) = item.data.extra.as_deref() {
                 let extra_lc = extra.to_lowercase();
                 if extra_lc.contains(&format!("citation key: {citekey_lc}"))
                     || extra_lc.contains(&format!("citationkey: {citekey_lc}"))
@@ -594,9 +514,9 @@ impl PreparedCondition<'_> {
                     || matches_creator_full_name(c, self)
             }),
             SearchField::Date => {
-                item.data.date().is_some_and(|s| self.matches_str(s))
+                item.data.date.as_deref().is_some_and(|s| self.matches_str(s))
             }
-            SearchField::Year => item.data.date().is_some_and(|d| {
+            SearchField::Year => item.data.date.as_deref().is_some_and(|d| {
                 self.matches_str(d.split('-').next().unwrap_or(d))
             }),
             SearchField::ItemType => {
@@ -606,10 +526,10 @@ impl PreparedCondition<'_> {
                 item.data.tags.iter().any(|t| self.matches_str(t.tag.as_str()))
             }
             SearchField::Extra => {
-                item.data.extra().is_some_and(|s| self.matches_str(s))
+                item.data.extra.as_deref().is_some_and(|s| self.matches_str(s))
             }
             SearchField::Doi => {
-                item.data.doi().is_some_and(|s| self.matches_str(s))
+                item.data.doi.as_deref().is_some_and(|s| self.matches_str(s))
             }
             SearchField::Other(field_name) => match field_name.as_str() {
                 "title" => item
@@ -617,7 +537,11 @@ impl PreparedCondition<'_> {
                     .title
                     .as_deref()
                     .is_some_and(|s| self.matches_str(s)),
-                "doi" => item.data.doi().is_some_and(|s| self.matches_str(s)),
+                "doi" => item
+                    .data
+                    .doi
+                    .as_deref()
+                    .is_some_and(|s| self.matches_str(s)),
                 _ => false,
             },
         }
@@ -781,7 +705,7 @@ fn sort_items(
 fn sort_key(item: &ZoteroItem, field: SortField) -> String {
     match field {
         SortField::Title => item.data.title.clone().unwrap_or_default(),
-        SortField::Date => item.data.date().unwrap_or_default().to_owned(),
+        SortField::Date => item.data.date.clone().unwrap_or_default(),
         SortField::DateAdded => {
             item.data.date_added.clone().unwrap_or_default()
         }
@@ -883,10 +807,15 @@ fn coverage_flags(
     item: &ZoteroItem,
     children: &[ZoteroItem],
 ) -> ItemCoverageFlags {
-    let has_doi = item.data.doi().is_some_and(|d| !d.trim().is_empty());
+    let has_doi =
+        item.data.doi.as_deref().is_some_and(|d| !d.trim().is_empty());
     let has_pdf = children.iter().any(|child| {
         child.data.item_type == ItemType::Attachment
-            && child.data.content_type().is_some_and(|ct| ct.contains("pdf"))
+            && child
+                .data
+                .content_type
+                .as_deref()
+                .is_some_and(|ct| ct.contains("pdf"))
     });
     let has_notes =
         children.iter().any(|child| child.data.item_type == ItemType::Note);
@@ -1022,7 +951,7 @@ fn find_duplicate_groups(items: &[ZoteroItem]) -> Vec<DuplicateGroup> {
         std::collections::BTreeMap::new();
 
     for item in items {
-        if let Some(doi) = item.data.doi() {
+        if let Some(doi) = item.data.doi.as_deref() {
             if !doi.trim().is_empty() {
                 doi_map
                     .entry(doi.trim().to_lowercase())

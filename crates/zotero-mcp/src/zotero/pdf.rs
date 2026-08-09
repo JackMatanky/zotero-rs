@@ -91,20 +91,20 @@ pub(crate) fn resolve_attachment_pdf_path(
     }
 
     if item.data.link_mode() == Some(LinkMode::LinkedFile) {
-        if let Some(path) = item
-            .data
-            .path()
-            .and_then(|path| resolve_linked_attachment_path(path, bridge_roots))
+        if let Some(path) =
+            item.data.path.as_deref().and_then(|path| {
+                resolve_linked_attachment_path(path, bridge_roots)
+            })
         {
             return Some(ResolvedPdfPath::NeedsRootCheck(path));
         }
     }
 
-    if item.data.content_type() == Some("application/pdf") {
-        if let Some(path) = item
-            .data
-            .path()
-            .and_then(|path| resolve_linked_attachment_path(path, bridge_roots))
+    if item.data.content_type.as_deref() == Some("application/pdf") {
+        if let Some(path) =
+            item.data.path.as_deref().and_then(|path| {
+                resolve_linked_attachment_path(path, bridge_roots)
+            })
         {
             return Some(ResolvedPdfPath::NeedsRootCheck(path));
         }
@@ -420,7 +420,8 @@ impl ZoteroMcpServer {
         let bridge_roots = self.fetch_bridge_pdf_roots().await;
         let found_path = if item.data.item_type == ItemType::Attachment {
             item.data
-                .path()
+                .path
+                .as_deref()
                 .map(PathBuf::from)
                 .or_else(|| {
                     resolve_attachment_pdf_path(&item, &bridge_roots)

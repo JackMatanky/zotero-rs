@@ -125,10 +125,10 @@ impl ZoteroClient {
         let title = item.data.title.as_deref().unwrap_or(key);
         let _ = writeln!(md, "# Annotations & Notes: {title}\n");
 
-        if let Some(doi) = item.data.doi() {
+        if let Some(doi) = item.data.doi.as_deref() {
             let _ = writeln!(md, "**DOI:** {doi}");
         }
-        if let Some(date) = item.data.date() {
+        if let Some(date) = item.data.date.as_deref() {
             let _ = writeln!(md, "**Date:** {date}");
         }
         md.push('\n');
@@ -155,9 +155,9 @@ fn format_annotations_section(children: &[ZoteroItem]) -> String {
 
     let _ = writeln!(section, "## PDF Annotations\n");
     for ann in annotations {
-        let text = ann.data.annotation_text().unwrap_or("");
-        let comment = ann.data.annotation_comment().unwrap_or("");
-        let page = ann.data.annotation_page_label().unwrap_or("");
+        let text = ann.data.annotation_text.as_deref().unwrap_or("");
+        let comment = ann.data.annotation_comment.as_deref().unwrap_or("");
+        let page = ann.data.annotation_page_label.as_deref().unwrap_or("");
 
         if !text.is_empty() {
             if page.is_empty() {
@@ -186,7 +186,7 @@ fn format_notes_section(item: &ZoteroItem, children: &[ZoteroItem]) -> String {
         .collect();
 
     if item.data.item_type == ItemType::Note {
-        if let Some(note) = item.data.note() {
+        if let Some(note) = item.data.note.as_deref() {
             let _ = writeln!(section, "## Note Content\n\n{note}\n");
         }
     }
@@ -194,7 +194,7 @@ fn format_notes_section(item: &ZoteroItem, children: &[ZoteroItem]) -> String {
     if !child_notes.is_empty() {
         let _ = writeln!(section, "## Child Notes\n");
         for (idx, note_item) in child_notes.iter().enumerate() {
-            if let Some(body) = note_item.data.note() {
+            if let Some(body) = note_item.data.note.as_deref() {
                 let num = idx.saturating_add(1);
                 let _ = writeln!(section, "### Note {num}\n\n{body}\n");
             }
@@ -260,10 +260,10 @@ mod tests {
                     item_type: ItemType::Annotation,
                     ..Default::default()
                 };
-                data.set_field("annotationType", "highlight");
-                data.set_field("annotationText", "Important concept");
-                data.set_field("annotationComment", "Check this out");
-                data.set_field("annotationPageLabel", "42");
+                data.annotation_type = Some("highlight".to_owned());
+                data.annotation_text = Some("Important concept".to_owned());
+                data.annotation_comment = Some("Check this out".to_owned());
+                data.annotation_page_label = Some("42".to_owned());
 
                 let annotation = ZoteroItem {
                     key: ItemKey::from("ANN00001"),
@@ -292,7 +292,7 @@ mod tests {
                     item_type: ItemType::Note,
                     ..Default::default()
                 };
-                data.set_field("note", "<p>Main note text</p>");
+                data.note = Some("<p>Main note text</p>".to_owned());
 
                 let note_item = ZoteroItem {
                     key: ItemKey::from("NOTE0001"),
@@ -332,7 +332,7 @@ mod tests {
                     item_type: ItemType::Note,
                     ..Default::default()
                 };
-                child_data.set_field("note", "<p>Child note text</p>");
+                child_data.note = Some("<p>Child note text</p>".to_owned());
 
                 let child_note = ZoteroItem {
                     key: ItemKey::from("NOTE0001"),

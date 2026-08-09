@@ -165,7 +165,7 @@ async fn assemble_item_text(
             parts.push(title.clone());
         }
     }
-    if let Some(abstract_note) = item.data.abstract_note() {
+    if let Some(abstract_note) = item.data.abstract_note.as_deref() {
         if !abstract_note.trim().is_empty() {
             parts.push(abstract_note.to_owned());
         }

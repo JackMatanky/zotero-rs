@@ -131,6 +131,55 @@ pub struct ZoteroItemData {
     #[serde(default)]
     pub deleted: bool,
 
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub abstract_note: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub publication_title: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub volume: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub issue: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pages: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub date: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub publisher: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub institution: Option<String>,
+    #[serde(rename = "DOI", default, skip_serializing_if = "Option::is_none")]
+    pub doi: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub citation_key: Option<String>,
+    #[serde(rename = "ISBN", default, skip_serializing_if = "Option::is_none")]
+    pub isbn: Option<String>,
+    #[serde(rename = "ISSN", default, skip_serializing_if = "Option::is_none")]
+    pub issn: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub extra: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_item: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub annotation_type: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub annotation_text: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub annotation_comment: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub annotation_color: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub annotation_page_label: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub content_type: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub filename: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+
     /// Dynamic catch-all for item-type specific fields.
     #[serde(flatten)]
     pub extra_fields: std::collections::HashMap<String, serde_json::Value>,
@@ -162,102 +211,6 @@ impl ZoteroItemData {
         value: V,
     ) {
         self.extra_fields.insert(key.into(), value.into());
-    }
-
-    pub fn abstract_note(&self) -> Option<&str> {
-        self.get_str("abstractNote")
-    }
-
-    pub fn publication_title(&self) -> Option<&str> {
-        self.get_str("publicationTitle")
-    }
-
-    pub fn volume(&self) -> Option<&str> {
-        self.get_str("volume")
-    }
-
-    pub fn issue(&self) -> Option<&str> {
-        self.get_str("issue")
-    }
-
-    pub fn pages(&self) -> Option<&str> {
-        self.get_str("pages")
-    }
-
-    pub fn date(&self) -> Option<&str> {
-        self.get_str("date")
-    }
-
-    pub fn publisher(&self) -> Option<&str> {
-        self.get_str("publisher")
-    }
-
-    pub fn institution(&self) -> Option<&str> {
-        self.get_str("institution")
-    }
-
-    pub fn doi(&self) -> Option<&str> {
-        self.get_str("doi")
-    }
-
-    pub fn citation_key(&self) -> Option<&str> {
-        self.get_str("citationKey")
-    }
-
-    pub fn isbn(&self) -> Option<&str> {
-        self.get_str("isbn")
-    }
-
-    pub fn issn(&self) -> Option<&str> {
-        self.get_str("issn")
-    }
-
-    pub fn url(&self) -> Option<&str> {
-        self.get_str("url")
-    }
-
-    pub fn extra(&self) -> Option<&str> {
-        self.get_str("extra")
-    }
-
-    pub fn note(&self) -> Option<&str> {
-        self.get_str("note")
-    }
-
-    pub fn parent_item(&self) -> Option<&str> {
-        self.get_str("parentItem")
-    }
-
-    pub fn annotation_type(&self) -> Option<&str> {
-        self.get_str("annotationType")
-    }
-
-    pub fn annotation_text(&self) -> Option<&str> {
-        self.get_str("annotationText")
-    }
-
-    pub fn annotation_comment(&self) -> Option<&str> {
-        self.get_str("annotationComment")
-    }
-
-    pub fn annotation_color(&self) -> Option<&str> {
-        self.get_str("annotationColor")
-    }
-
-    pub fn annotation_page_label(&self) -> Option<&str> {
-        self.get_str("annotationPageLabel")
-    }
-
-    pub fn content_type(&self) -> Option<&str> {
-        self.get_str("contentType")
-    }
-
-    pub fn filename(&self) -> Option<&str> {
-        self.get_str("filename")
-    }
-
-    pub fn path(&self) -> Option<&str> {
-        self.get_str("path")
     }
 
     /// Attachment storage mode (e.g. `imported_file`, `linked_file`).
@@ -349,7 +302,7 @@ mod tests {
                 item.data.title.as_deref(),
                 Some("Quantum Computing Advances")
             );
-            assert!(item.data.doi().is_none());
+            assert!(item.data.doi.is_none());
         }
 
         #[test]
@@ -420,6 +373,53 @@ mod tests {
         }
 
         #[test]
+        fn promoted_metadata_fields_are_omitted_when_absent() {
+            let raw_json = serde_json::json!({
+                "key": "ABC12345",
+                "version": 42,
+                "itemType": "journalArticle"
+            });
+
+            let data: ZoteroItemData = serde_json::from_value(raw_json)
+                .expect("item data should deserialize");
+            let serialized = serde_json::to_string(&data)
+                .expect("item data should serialize");
+
+            for wire_key in [
+                "abstractNote",
+                "publicationTitle",
+                "volume",
+                "issue",
+                "pages",
+                "date",
+                "publisher",
+                "institution",
+                "DOI",
+                "citationKey",
+                "ISBN",
+                "ISSN",
+                "url",
+                "extra",
+                "note",
+                "parentItem",
+                "annotationType",
+                "annotationText",
+                "annotationComment",
+                "annotationColor",
+                "annotationPageLabel",
+                "contentType",
+                "filename",
+                "path",
+            ] {
+                assert!(
+                    !serialized.contains(&format!("\"{wire_key}\"")),
+                    "absent field {wire_key} must be omitted, not serialized \
+                     as null: {serialized}"
+                );
+            }
+        }
+
+        #[test]
         fn parses_native_citation_key_field() {
             let raw_json = serde_json::json!({
                 "key": "ABC12345",
@@ -434,7 +434,7 @@ mod tests {
                 "item data JSON should deserialize: {result:?}"
             );
             let data: ZoteroItemData = result.expect("asserted Ok above");
-            assert_eq!(data.citation_key(), Some("smith2020deep"));
+            assert_eq!(data.citation_key.as_deref(), Some("smith2020deep"));
         }
 
         #[test]
@@ -473,6 +473,29 @@ mod tests {
                 col.data.parent_collection,
                 CollectionParent::Parent(CollectionKey::from("PARENT01"))
             );
+        }
+
+        #[test]
+        fn deserializes_uppercase_doi_isbn_issn_fields() {
+            let raw_json = serde_json::json!({
+                "key": "ABC12345",
+                "version": 42,
+                "itemType": "journalArticle",
+                "DOI": "10.1234/example",
+                "ISBN": "978-0-13-468599-1",
+                "ISSN": "1234-5678"
+            });
+
+            let result = serde_json::from_value(raw_json);
+            assert!(
+                result.is_ok(),
+                "item data JSON should deserialize: {result:?}"
+            );
+            let data: ZoteroItemData = result.expect("asserted Ok above");
+
+            assert_eq!(data.doi.as_deref(), Some("10.1234/example"));
+            assert_eq!(data.isbn.as_deref(), Some("978-0-13-468599-1"));
+            assert_eq!(data.issn.as_deref(), Some("1234-5678"));
         }
     }
 }
