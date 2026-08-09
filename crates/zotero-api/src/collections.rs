@@ -93,10 +93,7 @@ impl ZoteroClient {
 
         let res: ZoteroResponse<Vec<ZoteroCollection>> =
             self.post("/collections").json(payload).send().await?;
-        res.data.into_iter().next().ok_or_else(|| ZoteroApiError::LocalApi {
-            status: 500,
-            message: "Created collection array was empty".to_owned(),
-        })
+        crate::client::first_created(res.data, "collection")
     }
 
     /// Adds items to or removes items from a collection without modifying item
@@ -178,13 +175,10 @@ impl ZoteroClient {
             "name": new_name,
             "parentCollection": new_parent,
         });
-        let resp = self.put(&path).json(payload).send_raw().await?;
-        if !resp.status().is_success() {
-            return Err(ZoteroApiError::LocalApi {
-                status: resp.status().as_u16(),
-                message: resp.text().await.unwrap_or_default(),
-            });
-        }
+        let resp = crate::client::ensure_success(
+            self.put(&path).json(payload).send_raw().await?,
+        )
+        .await?;
         if let Ok(col) = resp.json::<ZoteroCollection>().await {
             Ok(col)
         } else {
@@ -206,17 +200,8 @@ impl ZoteroClient {
         keys: &[K],
         version: V,
     ) -> Result<(), ZoteroApiError> {
-        let keys_str = keys
-            .iter()
-            .map(std::convert::AsRef::as_ref)
-            .collect::<Vec<_>>()
-            .join(",");
-        self.delete_req("/collections")
-            .query("collectionKey", keys_str)
-            .unmodified_since_version(version.into())
-            .send_unit()
-            .await?;
-        Ok(())
+        self.delete_by_keys("/collections", "collectionKey", keys, version)
+            .await
     }
 }
 

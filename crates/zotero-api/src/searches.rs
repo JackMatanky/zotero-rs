@@ -99,17 +99,7 @@ impl ZoteroClient {
         keys: &[K],
         version: V,
     ) -> Result<(), ZoteroApiError> {
-        let keys_str = keys
-            .iter()
-            .map(std::convert::AsRef::as_ref)
-            .collect::<Vec<_>>()
-            .join(",");
-        self.delete_req("/searches")
-            .query("searchKey", keys_str)
-            .unmodified_since_version(version.into())
-            .send_unit()
-            .await?;
-        Ok(())
+        self.delete_by_keys("/searches", "searchKey", keys, version).await
     }
 }
 

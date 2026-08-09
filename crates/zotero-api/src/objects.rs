@@ -36,6 +36,43 @@ pub struct BatchWriteResponse {
     pub failed: serde_json::Value,
 }
 
+/// Zotero item creation payload, used by
+/// [`crate::client::ZoteroClient::create_item_from_metadata`] and (when the
+/// `metadata` feature is enabled) built by `crate::metadata::resolve_metadata`
+/// from a resolved DOI, arXiv ID, or ISBN lookup.
+#[derive(Clone, Debug, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ItemDraft {
+    /// Zotero item type (e.g. journal article, preprint, or book).
+    #[serde(rename = "itemType")]
+    pub item_type: ItemType,
+    /// Title of the publication.
+    pub title: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub creators: Vec<ZoteroCreator>,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub date: String,
+    #[serde(rename = "DOI", default, skip_serializing_if = "String::is_empty")]
+    pub doi: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub url: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub publication_title: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub abstract_note: String,
+    #[serde(
+        rename = "ISBN",
+        default,
+        skip_serializing_if = "String::is_empty"
+    )]
+    pub isbn: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub publisher: String,
+    /// Collections that should contain the created item.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub collections: Vec<CollectionKey>,
+}
+
 /// Zotero library descriptor in API responses.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct LibraryInfo {

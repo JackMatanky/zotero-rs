@@ -32,6 +32,7 @@
 
 #[macro_use]
 mod macros;
+pub(crate) mod analysis;
 pub mod better_bibtex;
 pub mod better_notes;
 pub(crate) mod bibtex;
@@ -41,7 +42,8 @@ pub(crate) mod deleted;
 pub mod errors;
 pub(crate) mod items;
 pub(crate) mod keys;
-pub(crate) mod metadata;
+#[cfg(feature = "metadata")]
+pub mod metadata;
 pub(crate) mod notes;
 pub(crate) mod objects;
 #[cfg(feature = "pdf")]
@@ -55,6 +57,9 @@ pub mod sqlite;
 pub(crate) mod tags;
 pub(crate) mod types;
 
+pub use analysis::{
+    DuplicateGroup, DuplicateType, LibraryCoverage, LibraryCoveragePage,
+};
 pub use better_bibtex::{
     AutoExportAddRequest, AuxFilePath, BetterBibtexClient,
     BibliographyContentType, BibliographyFormat, CollectionPath, CslStyleId,
@@ -68,22 +73,22 @@ pub use deleted::DeletedObjectsResponse;
 pub use errors::ZoteroApiError;
 pub use items::TrashAction;
 pub use keys::{CitationKey, CollectionKey, ItemKey, LibraryVersion, TagName};
+#[cfg(feature = "metadata")]
 pub use metadata::{
-    IdentifierKind, ItemDraft, resolve_metadata, resolve_metadata_with_urls,
+    IdentifierKind, resolve_metadata, resolve_metadata_with_urls,
 };
 pub use notes::{AnnotationDraft, AnnotationPosition};
 pub use objects::{
-    BatchWriteResponse, ItemLinks, ItemMeta, LibraryInfo, LocalApiStatus,
-    ZoteroCollection, ZoteroItem,
+    BatchWriteResponse, ItemDraft, ItemLinks, ItemMeta, LibraryInfo,
+    LocalApiStatus, ZoteroCollection, ZoteroItem,
 };
 #[cfg(feature = "pdf")]
 pub use pdf::*;
 pub use relations::RelatedItem;
 pub use search::{
-    DuplicateGroup, DuplicateType, ItemQueryParams, JoinMode, LibraryCoverage,
-    LibraryCoveragePage, PaginationInfo, QuickSearchMode, SearchCondition,
-    SearchField, SearchOperator, SearchPage, SortDirection, SortField,
-    SortOrder,
+    ItemQueryParams, JoinMode, PaginationInfo, QuickSearchMode,
+    SearchCondition, SearchField, SearchOperator, SearchPage, SortDirection,
+    SortField, SortOrder,
 };
 pub use searches::SavedSearch;
 pub use settings::SettingEntry;

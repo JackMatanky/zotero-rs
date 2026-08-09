@@ -36,7 +36,8 @@ tempfile.workspace = true
 # those helpers being part of the normal public API. Never enabled outside
 # `cfg(test)` or a dev-dependency declaration.
 default = []
-full = ["pdf", "sqlite"]
+full = ["metadata", "pdf", "sqlite"]
+metadata = []
 pdf = ["dep:lopdf", "dep:pdf-extract"]
 sqlite = ["dep:sqlx"]
 test-util = []

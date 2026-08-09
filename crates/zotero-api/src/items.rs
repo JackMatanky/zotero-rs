@@ -11,8 +11,7 @@ use tokio::fs;
 use crate::{
     client::{ZoteroClient, ZoteroResponse},
     errors::ZoteroApiError,
-    metadata::ItemDraft,
-    objects::{BatchWriteResponse, ZoteroItem},
+    objects::{BatchWriteResponse, ItemDraft, ZoteroItem},
     types::{ItemType, LinkMode},
 };
 
@@ -98,12 +97,7 @@ impl ZoteroClient {
         if resp.status() == StatusCode::NOT_FOUND {
             return Err(ZoteroApiError::NotFound(format!("Item {key}")));
         }
-        if !resp.status().is_success() {
-            return Err(ZoteroApiError::LocalApi {
-                status: resp.status().as_u16(),
-                message: resp.text().await.unwrap_or_default(),
-            });
-        }
+        let resp = crate::client::ensure_success(resp).await?;
         Ok(resp.json().await?)
     }
 
@@ -159,12 +153,7 @@ impl ZoteroClient {
         let key = item_key.as_ref();
         let path = format!("/items/{key}");
         let resp = self.patch(&path).json(fields).send_raw().await?;
-        if !resp.status().is_success() {
-            return Err(ZoteroApiError::LocalApi {
-                status: resp.status().as_u16(),
-                message: resp.text().await.unwrap_or_default(),
-            });
-        }
+        let resp = crate::client::ensure_success(resp).await?;
         if let Ok(item) = resp.json::<ZoteroItem>().await {
             Ok(item)
         } else {
@@ -229,10 +218,7 @@ impl ZoteroClient {
     ) -> Result<ZoteroItem, ZoteroApiError> {
         let res: ZoteroResponse<Vec<ZoteroItem>> =
             self.post("/items").json(json!([draft])).send().await?;
-        res.data.into_iter().next().ok_or_else(|| ZoteroApiError::LocalApi {
-            status: 500,
-            message: "Created item array was empty".to_owned(),
-        })
+        crate::client::first_created(res.data, "item")
     }
 
     /// Batch-creates multiple items.
@@ -274,17 +260,7 @@ impl ZoteroClient {
         keys: &[K],
         version: V,
     ) -> Result<(), ZoteroApiError> {
-        let keys_str = keys
-            .iter()
-            .map(std::convert::AsRef::as_ref)
-            .collect::<Vec<_>>()
-            .join(",");
-        self.delete_req("/items")
-            .query("itemKey", keys_str)
-            .unmodified_since_version(version.into())
-            .send_unit()
-            .await?;
-        Ok(())
+        self.delete_by_keys("/items", "itemKey", keys, version).await
     }
 
     /// Retrieves local file view URL for an attachment item.
@@ -302,12 +278,7 @@ impl ZoteroClient {
             .get(format!("/items/{key_str}/file/view/url"))
             .send_raw()
             .await?;
-        if !resp.status().is_success() {
-            return Err(ZoteroApiError::LocalApi {
-                status: resp.status().as_u16(),
-                message: resp.text().await.unwrap_or_default(),
-            });
-        }
+        let resp = crate::client::ensure_success(resp).await?;
         Ok(resp.text().await?)
     }
 
@@ -357,10 +328,7 @@ impl ZoteroClient {
 
         let res: ZoteroResponse<Vec<ZoteroItem>> =
             self.post("/items").json(payload).send().await?;
-        res.data.into_iter().next().ok_or_else(|| ZoteroApiError::LocalApi {
-            status: 500,
-            message: "Created attachment array was empty".to_owned(),
-        })
+        crate::client::first_created(res.data, "attachment")
     }
 
     /// Imports a local file into Zotero storage via MD5 upload.
@@ -416,12 +384,7 @@ impl ZoteroClient {
 
         let res: ZoteroResponse<Vec<ZoteroItem>> =
             self.post("/items").json(json!([attachment])).send().await?;
-        let item = res.data.into_iter().next().ok_or_else(|| {
-            ZoteroApiError::LocalApi {
-                status: 500,
-                message: "Created attachment array was empty".to_owned(),
-            }
-        })?;
+        let item = crate::client::first_created(res.data, "attachment")?;
 
         let file_url = format!(
             "{}{}/items/{}/file",
@@ -441,14 +404,7 @@ impl ZoteroClient {
                 ("mtime", mtime_text.as_str()),
             ])
             .header("If-None-Match", "*");
-        let resp = req.send().await?;
-        let status = resp.status();
-        if !status.is_success() {
-            return Err(ZoteroApiError::LocalApi {
-                status: status.as_u16(),
-                message: resp.text().await.unwrap_or_default(),
-            });
-        }
+        let resp = crate::client::ensure_success(req.send().await?).await?;
         let body: serde_json::Value = resp.json().await?;
         if body.as_object().is_some_and(|object| object.contains_key("exists"))
         {
@@ -464,19 +420,15 @@ impl ZoteroClient {
             });
         }
 
-        let finalize = self
-            .http
-            .post(&file_url)
-            .form(&[("upload", ticket.upload_key.as_str())])
-            .header("If-None-Match", "*")
-            .send()
-            .await?;
-        if !finalize.status().is_success() {
-            return Err(ZoteroApiError::LocalApi {
-                status: finalize.status().as_u16(),
-                message: finalize.text().await.unwrap_or_default(),
-            });
-        }
+        crate::client::ensure_success(
+            self.http
+                .post(&file_url)
+                .form(&[("upload", ticket.upload_key.as_str())])
+                .header("If-None-Match", "*")
+                .send()
+                .await?,
+        )
+        .await?;
         Ok(item)
     }
 }

@@ -1,51 +1,16 @@
 //! Metadata resolution for DOI, arXiv ID, and ISBN imports.
 
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 
 use crate::{
     errors::ZoteroApiError,
-    keys::CollectionKey,
-    objects::ZoteroCreator,
+    objects::{ItemDraft, ZoteroCreator},
     types::{CreatorType, ItemType},
 };
 
 const DEFAULT_CROSSREF_URL: &str = "https://api.crossref.org";
 const DEFAULT_SEMANTIC_SCHOLAR_URL: &str = "https://api.semanticscholar.org";
 const DEFAULT_OPEN_LIBRARY_URL: &str = "https://openlibrary.org";
-
-/// Zotero item payload resolved from a DOI, arXiv ID, or ISBN lookup.
-#[derive(Clone, Debug, Default, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ItemDraft {
-    /// Zotero item type (e.g. journal article, preprint, or book).
-    #[serde(rename = "itemType")]
-    pub item_type: ItemType,
-    /// Title of the publication.
-    pub title: String,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub creators: Vec<ZoteroCreator>,
-    #[serde(default, skip_serializing_if = "String::is_empty")]
-    pub date: String,
-    #[serde(rename = "DOI", default, skip_serializing_if = "String::is_empty")]
-    pub doi: String,
-    #[serde(default, skip_serializing_if = "String::is_empty")]
-    pub url: String,
-    #[serde(default, skip_serializing_if = "String::is_empty")]
-    pub publication_title: String,
-    #[serde(default, skip_serializing_if = "String::is_empty")]
-    pub abstract_note: String,
-    #[serde(
-        rename = "ISBN",
-        default,
-        skip_serializing_if = "String::is_empty"
-    )]
-    pub isbn: String,
-    #[serde(default, skip_serializing_if = "String::is_empty")]
-    pub publisher: String,
-    /// Collections that should contain the created item.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub collections: Vec<CollectionKey>,
-}
 
 /// Public identifier type accepted by [`resolve_metadata`].
 #[derive(Copy, Clone, Debug, Deserialize)]

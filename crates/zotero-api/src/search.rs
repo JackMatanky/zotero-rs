@@ -4,6 +4,10 @@
 //! [`ZoteroClient`] methods for free-text search, tag queries, and citation key
 //! lookup.
 
+use query_engine::{
+    PageAccumulator, PreparedCondition, finish_page, is_searchable_item,
+    item_matches_conditions, paginate, sort_items,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -453,541 +457,317 @@ impl ZoteroClient {
     }
 }
 
-/// Search condition prepared once for client-side scans.
-struct PreparedCondition<'a> {
-    field: &'a SearchField,
-    operator: &'a SearchOperator,
-    value: &'a str,
-    value_lc: String,
-}
+/// Client-side query evaluation for advanced searches the Zotero Local API
+/// cannot execute server-side: boolean predicate matching, sorting, and
+/// pagination-shaping.
+///
+/// Used exclusively by [`ZoteroClient::advanced_search`] as a client-side
+/// fallback when a structured search's conditions cannot be pushed down to
+/// Zotero's quick-search query parameters.
+mod query_engine {
+    use super::{
+        JoinMode, PaginationInfo, SearchCondition, SearchField, SearchOperator,
+        SearchPage, SortField, SortOrder,
+    };
+    use crate::objects::ZoteroItem;
 
-impl<'a> From<&'a SearchCondition> for PreparedCondition<'a> {
-    fn from(cond: &'a SearchCondition) -> Self {
-        Self {
-            field: &cond.field,
-            operator: &cond.operator,
-            value: cond.value.as_str(),
-            value_lc: cond.value.to_lowercase(),
-        }
+    /// Search condition prepared once for client-side scans.
+    pub(super) struct PreparedCondition<'a> {
+        field: &'a SearchField,
+        operator: &'a SearchOperator,
+        value: &'a str,
+        value_lc: String,
     }
-}
 
-impl PreparedCondition<'_> {
-    fn matches_str(&self, s: &str) -> bool {
-        match self.operator {
-            SearchOperator::Is => s.to_lowercase() == self.value_lc,
-            SearchOperator::IsNot => s.to_lowercase() != self.value_lc,
-            SearchOperator::StartsWith => {
-                s.to_lowercase().starts_with(&self.value_lc)
-            }
-            SearchOperator::EndsWith => {
-                s.to_lowercase().ends_with(&self.value_lc)
-            }
-            SearchOperator::DoesNotContain => {
-                !s.to_lowercase().contains(&self.value_lc)
-            }
-            SearchOperator::Contains | SearchOperator::Other(_) => {
-                s.to_lowercase().contains(&self.value_lc)
-            }
-            SearchOperator::IsGreaterThan | SearchOperator::IsAfter => {
-                compare_dates(s, self.value).is_gt()
-            }
-            SearchOperator::IsLessThan | SearchOperator::IsBefore => {
-                compare_dates(s, self.value).is_lt()
+    impl<'a> From<&'a SearchCondition> for PreparedCondition<'a> {
+        fn from(cond: &'a SearchCondition) -> Self {
+            Self {
+                field: &cond.field,
+                operator: &cond.operator,
+                value: cond.value.as_str(),
+                value_lc: cond.value.to_lowercase(),
             }
         }
     }
 
-    fn matches_item(&self, item: &ZoteroItem) -> bool {
-        match self.field {
-            SearchField::Title => {
-                item.data.title.as_deref().is_some_and(|s| self.matches_str(s))
+    impl PreparedCondition<'_> {
+        fn matches_str(&self, s: &str) -> bool {
+            match self.operator {
+                SearchOperator::Is => s.to_lowercase() == self.value_lc,
+                SearchOperator::IsNot => s.to_lowercase() != self.value_lc,
+                SearchOperator::StartsWith => {
+                    s.to_lowercase().starts_with(&self.value_lc)
+                }
+                SearchOperator::EndsWith => {
+                    s.to_lowercase().ends_with(&self.value_lc)
+                }
+                SearchOperator::DoesNotContain => {
+                    !s.to_lowercase().contains(&self.value_lc)
+                }
+                SearchOperator::Contains | SearchOperator::Other(_) => {
+                    s.to_lowercase().contains(&self.value_lc)
+                }
+                SearchOperator::IsGreaterThan | SearchOperator::IsAfter => {
+                    compare_dates(s, self.value).is_gt()
+                }
+                SearchOperator::IsLessThan | SearchOperator::IsBefore => {
+                    compare_dates(s, self.value).is_lt()
+                }
             }
-            SearchField::Creator => item.data.creators.iter().any(|c| {
-                c.name.as_deref().is_some_and(|s| self.matches_str(s))
-                    || c.first_name
-                        .as_deref()
-                        .is_some_and(|s| self.matches_str(s))
-                    || c.last_name
-                        .as_deref()
-                        .is_some_and(|s| self.matches_str(s))
-                    || matches_creator_full_name(c, self)
-            }),
-            SearchField::Date => {
-                item.data.date.as_deref().is_some_and(|s| self.matches_str(s))
-            }
-            SearchField::Year => item.data.date.as_deref().is_some_and(|d| {
-                self.matches_str(d.split('-').next().unwrap_or(d))
-            }),
-            SearchField::ItemType => {
-                self.matches_str(item.data.item_type.as_str())
-            }
-            SearchField::Tag => {
-                item.data.tags.iter().any(|t| self.matches_str(t.tag.as_str()))
-            }
-            SearchField::Extra => {
-                item.data.extra.as_deref().is_some_and(|s| self.matches_str(s))
-            }
-            SearchField::Doi => {
-                item.data.doi.as_deref().is_some_and(|s| self.matches_str(s))
-            }
-            SearchField::Other(field_name) => match field_name.as_str() {
-                "title" => item
+        }
+
+        fn matches_item(&self, item: &ZoteroItem) -> bool {
+            match self.field {
+                SearchField::Title => item
                     .data
                     .title
                     .as_deref()
                     .is_some_and(|s| self.matches_str(s)),
-                "doi" => item
+                SearchField::Creator => item.data.creators.iter().any(|c| {
+                    c.name.as_deref().is_some_and(|s| self.matches_str(s))
+                        || c.first_name
+                            .as_deref()
+                            .is_some_and(|s| self.matches_str(s))
+                        || c.last_name
+                            .as_deref()
+                            .is_some_and(|s| self.matches_str(s))
+                        || matches_creator_full_name(c, self)
+                }),
+                SearchField::Date => item
+                    .data
+                    .date
+                    .as_deref()
+                    .is_some_and(|s| self.matches_str(s)),
+                SearchField::Year => {
+                    item.data.date.as_deref().is_some_and(|d| {
+                        self.matches_str(d.split('-').next().unwrap_or(d))
+                    })
+                }
+                SearchField::ItemType => {
+                    self.matches_str(item.data.item_type.as_str())
+                }
+                SearchField::Tag => item
+                    .data
+                    .tags
+                    .iter()
+                    .any(|t| self.matches_str(t.tag.as_str())),
+                SearchField::Extra => item
+                    .data
+                    .extra
+                    .as_deref()
+                    .is_some_and(|s| self.matches_str(s)),
+                SearchField::Doi => item
                     .data
                     .doi
                     .as_deref()
                     .is_some_and(|s| self.matches_str(s)),
-                _ => false,
-            },
-        }
-    }
-}
-
-/// Accumulates only the requested page while still counting all matches.
-struct PageAccumulator<T> {
-    offset: usize,
-    limit: usize,
-    total: usize,
-    items: Vec<T>,
-}
-
-impl<T> PageAccumulator<T> {
-    fn new(offset: usize, limit: usize) -> Self {
-        Self {
-            offset,
-            limit,
-            total: 0,
-            items: Vec::with_capacity(limit),
+                SearchField::Other(field_name) => match field_name.as_str() {
+                    "title" => item
+                        .data
+                        .title
+                        .as_deref()
+                        .is_some_and(|s| self.matches_str(s)),
+                    "doi" => item
+                        .data
+                        .doi
+                        .as_deref()
+                        .is_some_and(|s| self.matches_str(s)),
+                    _ => false,
+                },
+            }
         }
     }
 
-    fn push_match(&mut self, item: T) {
-        if self.total >= self.offset && self.items.len() < self.limit {
-            self.items.push(item);
-        }
-        self.total = self.total.saturating_add(1);
-    }
-
-    fn into_page(self) -> SearchPage<T> {
-        let offset = self.offset.min(self.total);
-        let returned = self.items.len();
-        SearchPage {
-            items: self.items,
-            pagination: PaginationInfo {
-                limit: self.limit,
-                offset,
-                total: self.total,
-                has_more: offset.saturating_add(returned) < self.total,
-            },
-        }
-    }
-}
-
-/// Returns a `{items, pagination}` page slicing `results` at `offset`/`limit`.
-fn paginate<T>(results: Vec<T>, offset: usize, limit: usize) -> SearchPage<T> {
-    let total = results.len();
-    let skip = offset.min(total);
-    let items: Vec<T> = results.into_iter().skip(skip).take(limit).collect();
-    SearchPage {
-        items,
-        pagination: PaginationInfo {
-            limit,
-            offset: skip,
-            total,
-            has_more: skip.saturating_add(limit) < total,
-        },
-    }
-}
-
-/// Wraps a server-fetched page, falling back to `offset + items.len()` when
-/// the server reports no total.
-fn finish_page(
-    items: Vec<ZoteroItem>,
-    server_total: Option<usize>,
-    offset: usize,
-    limit: usize,
-) -> SearchPage<ZoteroItem> {
-    let returned = items.len();
-    let total = server_total.unwrap_or_else(|| offset.saturating_add(returned));
-    let has_more = server_total.map_or(returned == limit, |exact| {
-        offset.saturating_add(returned) < exact
-    });
-
-    SearchPage {
-        items,
-        pagination: PaginationInfo {
-            limit,
-            offset,
-            total,
-            has_more,
-        },
-    }
-}
-
-/// Returns true for items that are not attachments, notes, or annotations.
-fn is_searchable_item(item: &ZoteroItem) -> bool {
-    item.data.item_type.is_indexable()
-}
-
-fn matches_creator_full_name(
-    creator: &crate::objects::ZoteroCreator,
-    cond: &PreparedCondition<'_>,
-) -> bool {
-    let (Some(first), Some(last)) =
-        (creator.first_name.as_deref(), creator.last_name.as_deref())
-    else {
-        return false;
-    };
-    let mut full = String::with_capacity(
-        first.len().saturating_add(1).saturating_add(last.len()),
-    );
-    full.push_str(first);
-    full.push(' ');
-    full.push_str(last);
-    cond.matches_str(&full)
-}
-
-fn item_matches_conditions(
-    item: &ZoteroItem,
-    conditions: &[PreparedCondition<'_>],
-    join_mode: JoinMode,
-) -> bool {
-    match join_mode {
-        JoinMode::All => conditions.iter().all(|cond| cond.matches_item(item)),
-        JoinMode::Any => conditions.iter().any(|cond| cond.matches_item(item)),
-    }
-}
-
-/// Compares two date-or-year strings by their leading numeric components.
-fn compare_dates(a: &str, b: &str) -> std::cmp::Ordering {
-    date_key(a).cmp(&date_key(b))
-}
-
-fn date_key(s: &str) -> (u32, u32, u32) {
-    let mut parts = s.split('-').filter(|p| !p.is_empty());
-    (
-        next_date_part(&mut parts),
-        next_date_part(&mut parts),
-        next_date_part(&mut parts),
-    )
-}
-
-fn next_date_part<'a>(parts: &mut impl Iterator<Item = &'a str>) -> u32 {
-    parts.next().and_then(|p| p.parse::<u32>().ok()).unwrap_or(0)
-}
-
-/// Sorts `items` by `field` in `direction` and returns the sorted items.
-fn sort_items(
-    items: Vec<ZoteroItem>,
-    field: SortField,
-    direction: SortOrder,
-) -> Vec<ZoteroItem> {
-    let mut keyed: Vec<(String, ZoteroItem)> = items
-        .into_iter()
-        .map(|item| {
-            let key = sort_key(&item, field);
-            (key, item)
-        })
-        .collect();
-    match direction {
-        SortOrder::Asc => keyed.sort_by(|a, b| a.0.cmp(&b.0)),
-        SortOrder::Desc => keyed.sort_by(|a, b| b.0.cmp(&a.0)),
-    }
-    keyed.into_iter().map(|(_, item)| item).collect()
-}
-
-/// Returns the sort key string for `item` under `field`.
-fn sort_key(item: &ZoteroItem, field: SortField) -> String {
-    match field {
-        SortField::Title => item.data.title.clone().unwrap_or_default(),
-        SortField::Date => item.data.date.clone().unwrap_or_default(),
-        SortField::DateAdded => {
-            item.data.date_added.clone().unwrap_or_default()
-        }
-        SortField::DateModified => {
-            item.data.date_modified.clone().unwrap_or_default()
-        }
-        SortField::Creator => {
-            item.data.creators.first().map_or_else(String::new, |c| {
-                c.name.clone().unwrap_or_else(|| {
-                    format!(
-                        "{} {}",
-                        c.first_name.as_deref().unwrap_or(""),
-                        c.last_name.as_deref().unwrap_or("")
-                    )
-                })
-            })
-        }
-    }
-}
-
-/// Coverage indicators for a single library item.
-#[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
-#[expect(
-    clippy::struct_excessive_bools,
-    reason = "domain model tracks 3 distinct boolean flags"
-)]
-struct ItemCoverageFlags {
-    has_pdf: bool,
-    has_doi: bool,
-    has_notes: bool,
-}
-
-/// Aggregate PDF, DOI, and note coverage statistics for a library or
-/// collection.
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct LibraryCoverage {
-    pub total_items: usize,
-    pub with_pdf: usize,
-    pub with_doi: usize,
-    pub with_notes: usize,
-    pub pdf_percentage: f64,
-    pub doi_percentage: f64,
-    pub notes_percentage: f64,
-}
-
-/// One page of library coverage results alongside pagination metadata.
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct LibraryCoveragePage {
-    pub coverage: LibraryCoverage,
-    pub pagination: PaginationInfo,
-}
-
-impl ZoteroClient {
-    /// Computes library or optional `collection_key` coverage statistics for
-    /// PDF attachments, DOIs, and child notes.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`ZoteroApiError::LocalApi`]/[`ZoteroApiError::Network`]/
-    /// [`ZoteroApiError::Json`] if the request fails.
-    #[inline]
-    pub async fn get_library_coverage<K: AsRef<str>>(
-        &self,
-        collection_key: Option<K>,
+    /// Accumulates only the requested page while still counting all matches.
+    pub(super) struct PageAccumulator<T> {
         offset: usize,
         limit: usize,
-    ) -> Result<LibraryCoveragePage, ZoteroApiError> {
-        let base = match &collection_key {
-            Some(col) => format!(
-                "{}{}/collections/{}/items",
-                self.base_url.trim_end_matches('/'),
-                self.target_prefix(),
-                col.as_ref()
-            ),
-            None => format!(
-                "{}{}/items?itemType=-note&sort=dateModified&direction=desc",
-                self.base_url.trim_end_matches('/'),
-                self.target_prefix()
-            ),
-        };
-        let page_url = crate::client::add_pagination(&base, offset, limit);
-        let page = self.get_items_with_total(&page_url).await?;
-        let pagination =
-            coverage_pagination(offset, limit, page.items.len(), page.total);
-
-        let mut children_by_idx = Vec::with_capacity(page.items.len());
-        for item in &page.items {
-            children_by_idx.push(
-                self.get_item_children(&item.key).await.unwrap_or_default(),
-            );
-        }
-
-        Ok(classify_coverage_page(&page.items, &children_by_idx, pagination))
-    }
-}
-
-/// Evaluates PDF, DOI, and note availability flags for a single `item`.
-fn coverage_flags(
-    item: &ZoteroItem,
-    children: &[ZoteroItem],
-) -> ItemCoverageFlags {
-    let has_doi =
-        item.data.doi.as_deref().is_some_and(|d| !d.trim().is_empty());
-    let has_pdf = children.iter().any(|child| {
-        child.data.item_type == ItemType::Attachment
-            && child
-                .data
-                .content_type
-                .as_deref()
-                .is_some_and(|ct| ct.contains("pdf"))
-    });
-    let has_notes =
-        children.iter().any(|child| child.data.item_type == ItemType::Note);
-
-    ItemCoverageFlags {
-        has_pdf,
-        has_doi,
-        has_notes,
-    }
-}
-
-fn coverage_pagination(
-    offset: usize,
-    limit: usize,
-    returned: usize,
-    server_total: Option<usize>,
-) -> PaginationInfo {
-    let total = server_total.unwrap_or_else(|| offset.saturating_add(returned));
-    let page_offset =
-        server_total.map_or(offset, |known_total| offset.min(known_total));
-    PaginationInfo {
-        limit,
-        offset: page_offset,
-        total,
-        has_more: server_total.map_or(returned == limit, |known_total| {
-            page_offset.saturating_add(returned) < known_total
-        }),
-    }
-}
-
-fn classify_coverage_page(
-    selected: &[ZoteroItem],
-    children_by_idx: &[Vec<ZoteroItem>],
-    pagination: PaginationInfo,
-) -> LibraryCoveragePage {
-    let mut flags = Vec::with_capacity(selected.len());
-    for (item, children) in selected.iter().zip(children_by_idx) {
-        flags.push(coverage_flags(item, children));
-    }
-    LibraryCoveragePage {
-        coverage: classify_coverage(&flags),
-        pagination,
-    }
-}
-
-/// Aggregates coverage flags across library items into [`LibraryCoverage`].
-fn classify_coverage(flags: &[ItemCoverageFlags]) -> LibraryCoverage {
-    let total = flags.len();
-    if total == 0 {
-        return LibraryCoverage {
-            total_items: 0,
-            with_pdf: 0,
-            with_doi: 0,
-            with_notes: 0,
-            pdf_percentage: 0.0,
-            doi_percentage: 0.0,
-            notes_percentage: 0.0,
-        };
+        total: usize,
+        items: Vec<T>,
     }
 
-    let with_pdf = flags.iter().filter(|f| f.has_pdf).count();
-    let with_doi = flags.iter().filter(|f| f.has_doi).count();
-    let with_notes = flags.iter().filter(|f| f.has_notes).count();
-
-    LibraryCoverage {
-        total_items: total,
-        with_pdf,
-        with_doi,
-        with_notes,
-        pdf_percentage: compute_percentage(with_pdf, total),
-        doi_percentage: compute_percentage(with_doi, total),
-        notes_percentage: compute_percentage(with_notes, total),
-    }
-}
-
-#[expect(
-    clippy::as_conversions,
-    clippy::cast_precision_loss,
-    reason = "percentages calculation requires float conversion"
-)]
-fn compute_percentage(count: usize, total: usize) -> f64 {
-    if total == 0 {
-        0.0
-    } else {
-        (count as f64 / total as f64) * 100.0
-    }
-}
-
-/// Type of duplication criterion matched.
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
-#[serde(rename_all = "lowercase")]
-pub enum DuplicateType {
-    Doi,
-    Title,
-}
-
-/// Group of items identified as potential duplicates.
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct DuplicateGroup {
-    pub match_type: DuplicateType,
-    pub match_value: String,
-    pub item_keys: Vec<crate::keys::ItemKey>,
-}
-
-impl ZoteroClient {
-    /// Scans the library or optional `collection_key` for potential duplicate
-    /// items matching by title or DOI.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`ZoteroApiError::LocalApi`]/[`ZoteroApiError::Network`]/
-    /// [`ZoteroApiError::Json`] if fetching library items fails.
-    #[inline]
-    pub async fn find_duplicates<K: AsRef<str>>(
-        &self,
-        collection_key: Option<K>,
-    ) -> Result<Vec<DuplicateGroup>, ZoteroApiError> {
-        let items = if let Some(col) = collection_key {
-            self.get_collection_items(col).await?
-        } else {
-            self.get_all_items().await?
-        };
-
-        Ok(find_duplicate_groups(&items))
-    }
-}
-
-/// Group items by matching DOI or title to identify potential duplicate items.
-fn find_duplicate_groups(items: &[ZoteroItem]) -> Vec<DuplicateGroup> {
-    let mut doi_map: std::collections::BTreeMap<String, Vec<&ZoteroItem>> =
-        std::collections::BTreeMap::new();
-    let mut title_map: std::collections::BTreeMap<String, Vec<&ZoteroItem>> =
-        std::collections::BTreeMap::new();
-
-    for item in items {
-        if let Some(doi) = item.data.doi.as_deref() {
-            if !doi.trim().is_empty() {
-                doi_map
-                    .entry(doi.trim().to_lowercase())
-                    .or_default()
-                    .push(item);
+    impl<T> PageAccumulator<T> {
+        pub(super) fn new(offset: usize, limit: usize) -> Self {
+            Self {
+                offset,
+                limit,
+                total: 0,
+                items: Vec::with_capacity(limit),
             }
         }
-        if let Some(ref title) = item.data.title {
-            let t = title.trim().to_lowercase();
-            if t.len() > 5 {
-                title_map.entry(t).or_default().push(item);
+
+        pub(super) fn push_match(&mut self, item: T) {
+            if self.total >= self.offset && self.items.len() < self.limit {
+                self.items.push(item);
+            }
+            self.total = self.total.saturating_add(1);
+        }
+
+        pub(super) fn into_page(self) -> SearchPage<T> {
+            let offset = self.offset.min(self.total);
+            let returned = self.items.len();
+            SearchPage {
+                items: self.items,
+                pagination: PaginationInfo {
+                    limit: self.limit,
+                    offset,
+                    total: self.total,
+                    has_more: offset.saturating_add(returned) < self.total,
+                },
             }
         }
     }
 
-    let mut duplicates = Vec::new();
-    for (doi, grouped) in doi_map {
-        if grouped.len() > 1 {
-            duplicates.push(DuplicateGroup {
-                match_type: DuplicateType::Doi,
-                match_value: doi,
-                item_keys: grouped.iter().map(|i| i.key.clone()).collect(),
-            });
-        }
-    }
-    for (title, grouped) in title_map {
-        if grouped.len() > 1 {
-            duplicates.push(DuplicateGroup {
-                match_type: DuplicateType::Title,
-                match_value: title,
-                item_keys: grouped.iter().map(|i| i.key.clone()).collect(),
-            });
+    /// Returns a `{items, pagination}` page slicing `results` at
+    /// `offset`/`limit`.
+    pub(super) fn paginate<T>(
+        results: Vec<T>,
+        offset: usize,
+        limit: usize,
+    ) -> SearchPage<T> {
+        let total = results.len();
+        let skip = offset.min(total);
+        let items: Vec<T> =
+            results.into_iter().skip(skip).take(limit).collect();
+        SearchPage {
+            items,
+            pagination: PaginationInfo {
+                limit,
+                offset: skip,
+                total,
+                has_more: skip.saturating_add(limit) < total,
+            },
         }
     }
 
-    duplicates
+    /// Wraps a server-fetched page, falling back to `offset + items.len()`
+    /// when the server reports no total.
+    pub(super) fn finish_page(
+        items: Vec<ZoteroItem>,
+        server_total: Option<usize>,
+        offset: usize,
+        limit: usize,
+    ) -> SearchPage<ZoteroItem> {
+        let returned = items.len();
+        let total =
+            server_total.unwrap_or_else(|| offset.saturating_add(returned));
+        let has_more = server_total.map_or(returned == limit, |exact| {
+            offset.saturating_add(returned) < exact
+        });
+
+        SearchPage {
+            items,
+            pagination: PaginationInfo {
+                limit,
+                offset,
+                total,
+                has_more,
+            },
+        }
+    }
+
+    /// Returns true for items that are not attachments, notes, or
+    /// annotations.
+    pub(super) fn is_searchable_item(item: &ZoteroItem) -> bool {
+        item.data.item_type.is_indexable()
+    }
+
+    fn matches_creator_full_name(
+        creator: &crate::objects::ZoteroCreator,
+        cond: &PreparedCondition<'_>,
+    ) -> bool {
+        let (Some(first), Some(last)) =
+            (creator.first_name.as_deref(), creator.last_name.as_deref())
+        else {
+            return false;
+        };
+        let mut full = String::with_capacity(
+            first.len().saturating_add(1).saturating_add(last.len()),
+        );
+        full.push_str(first);
+        full.push(' ');
+        full.push_str(last);
+        cond.matches_str(&full)
+    }
+
+    pub(super) fn item_matches_conditions(
+        item: &ZoteroItem,
+        conditions: &[PreparedCondition<'_>],
+        join_mode: JoinMode,
+    ) -> bool {
+        match join_mode {
+            JoinMode::All => {
+                conditions.iter().all(|cond| cond.matches_item(item))
+            }
+            JoinMode::Any => {
+                conditions.iter().any(|cond| cond.matches_item(item))
+            }
+        }
+    }
+
+    /// Compares two date-or-year strings by their leading numeric
+    /// components.
+    fn compare_dates(a: &str, b: &str) -> std::cmp::Ordering {
+        date_key(a).cmp(&date_key(b))
+    }
+
+    fn date_key(s: &str) -> (u32, u32, u32) {
+        let mut parts = s.split('-').filter(|p| !p.is_empty());
+        (
+            next_date_part(&mut parts),
+            next_date_part(&mut parts),
+            next_date_part(&mut parts),
+        )
+    }
+
+    fn next_date_part<'a>(parts: &mut impl Iterator<Item = &'a str>) -> u32 {
+        parts.next().and_then(|p| p.parse::<u32>().ok()).unwrap_or(0)
+    }
+
+    /// Sorts `items` by `field` in `direction` and returns the sorted items.
+    pub(super) fn sort_items(
+        items: Vec<ZoteroItem>,
+        field: SortField,
+        direction: SortOrder,
+    ) -> Vec<ZoteroItem> {
+        let mut keyed: Vec<(String, ZoteroItem)> = items
+            .into_iter()
+            .map(|item| {
+                let key = sort_key(&item, field);
+                (key, item)
+            })
+            .collect();
+        match direction {
+            SortOrder::Asc => keyed.sort_by(|a, b| a.0.cmp(&b.0)),
+            SortOrder::Desc => keyed.sort_by(|a, b| b.0.cmp(&a.0)),
+        }
+        keyed.into_iter().map(|(_, item)| item).collect()
+    }
+
+    /// Returns the sort key string for `item` under `field`.
+    fn sort_key(item: &ZoteroItem, field: SortField) -> String {
+        match field {
+            SortField::Title => item.data.title.clone().unwrap_or_default(),
+            SortField::Date => item.data.date.clone().unwrap_or_default(),
+            SortField::DateAdded => {
+                item.data.date_added.clone().unwrap_or_default()
+            }
+            SortField::DateModified => {
+                item.data.date_modified.clone().unwrap_or_default()
+            }
+            SortField::Creator => {
+                item.data.creators.first().map_or_else(String::new, |c| {
+                    c.name.clone().unwrap_or_else(|| {
+                        format!(
+                            "{} {}",
+                            c.first_name.as_deref().unwrap_or(""),
+                            c.last_name.as_deref().unwrap_or("")
+                        )
+                    })
+                })
+            }
+        }
+    }
 }
 
 #[cfg(test)]

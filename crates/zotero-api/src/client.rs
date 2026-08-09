@@ -336,6 +336,28 @@ impl ZoteroClient {
             }
         })
     }
+
+    /// Batch-deletes objects at `path` by `key_param`
+    /// (`itemKey`/`collectionKey`/ `searchKey`), guarded by `version`.
+    pub(super) async fn delete_by_keys<K: AsRef<str>, V: Into<u64>>(
+        &self,
+        path: &str,
+        key_param: &str,
+        keys: &[K],
+        version: V,
+    ) -> Result<(), ZoteroApiError> {
+        let keys_str = keys
+            .iter()
+            .map(std::convert::AsRef::as_ref)
+            .collect::<Vec<_>>()
+            .join(",");
+        self.delete_req(path)
+            .query(key_param, keys_str)
+            .unmodified_since_version(version.into())
+            .send_unit()
+            .await?;
+        Ok(())
+    }
 }
 
 /// Fluent builder for HTTP requests to Zotero API endpoints.
@@ -563,6 +585,34 @@ impl<'a> ApiRequestBuilder<'a> {
 /// (1-indexed): 200ms, 400ms, 800ms, ...
 fn retry_delay_ms(attempt: u32) -> u64 {
     200_u64.saturating_mul(1_u64 << attempt.saturating_sub(1).min(16))
+}
+
+/// Returns `resp` if its status is 2xx, otherwise consumes the body as the
+/// error message and returns [`ZoteroApiError::LocalApi`].
+pub(super) async fn ensure_success(
+    resp: reqwest::Response,
+) -> Result<reqwest::Response, ZoteroApiError> {
+    let status = resp.status();
+    if status.is_success() {
+        Ok(resp)
+    } else {
+        Err(ZoteroApiError::LocalApi {
+            status: status.as_u16(),
+            message: resp.text().await.unwrap_or_default(),
+        })
+    }
+}
+
+/// Returns the first element of `data`, or a `500 "Created {kind} array was
+/// empty"` [`ZoteroApiError::LocalApi`] if it is empty.
+pub(super) fn first_created<T>(
+    data: Vec<T>,
+    kind: &str,
+) -> Result<T, ZoteroApiError> {
+    data.into_iter().next().ok_or_else(|| ZoteroApiError::LocalApi {
+        status: 500,
+        message: format!("Created {kind} array was empty"),
+    })
 }
 
 /// Appends `start` and `limit` query parameters to `url`, preserving any

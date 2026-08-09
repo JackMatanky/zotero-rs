@@ -68,10 +68,7 @@ impl ZoteroClient {
 
         let res: ZoteroResponse<Vec<ZoteroItem>> =
             self.post("/items").json(payload).send().await?;
-        res.data.into_iter().next().ok_or_else(|| ZoteroApiError::LocalApi {
-            status: 500,
-            message: "Created note array was empty".to_owned(),
-        })
+        crate::client::first_created(res.data, "note")
     }
 
     /// Creates a PDF annotation item attached to a parent PDF attachment item.
@@ -97,10 +94,7 @@ impl ZoteroClient {
         }]);
         let res: ZoteroResponse<Vec<ZoteroItem>> =
             self.post("/items").json(payload).send().await?;
-        res.data.into_iter().next().ok_or_else(|| ZoteroApiError::LocalApi {
-            status: 500,
-            message: "Created annotation array was empty".to_owned(),
-        })
+        crate::client::first_created(res.data, "annotation")
     }
 
     /// Extracts and synthesizes all annotations and notes attached to
