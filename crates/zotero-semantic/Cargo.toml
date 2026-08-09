@@ -21,7 +21,7 @@ sqlx = { workspace = true, default-features = false, features = [
 thiserror.workspace = true
 tokio.workspace = true
 tracing.workspace = true
-zotero-api.workspace = true
+zotero-api = { workspace = true, features = ["sqlite"] }
 
 [dev-dependencies]
 pretty_assertions.workspace = true
