@@ -48,8 +48,13 @@ impl ZoteroClient {
     ///
     /// # Errors
     ///
-    /// Returns [`ZoteroApiError::LocalApi`]/[`ZoteroApiError::Network`]/
-    /// [`ZoteroApiError::Json`] if the request fails.
+    /// - [`LocalApi`] if Zotero returns a non-2xx status
+    /// - [`Network`] on connection failure
+    /// - [`Json`] if the response cannot be deserialized
+    ///
+    /// [`LocalApi`]: ZoteroApiError::LocalApi
+    /// [`Network`]: ZoteroApiError::Network
+    /// [`Json`]: ZoteroApiError::Json
     #[inline]
     pub async fn get_library_coverage<K: AsRef<str>>(
         &self,
@@ -210,8 +215,13 @@ impl ZoteroClient {
     ///
     /// # Errors
     ///
-    /// Returns [`ZoteroApiError::LocalApi`]/[`ZoteroApiError::Network`]/
-    /// [`ZoteroApiError::Json`] if fetching library items fails.
+    /// - [`LocalApi`] if Zotero returns a non-2xx status
+    /// - [`Network`] on connection failure
+    /// - [`Json`] if the response cannot be deserialized
+    ///
+    /// [`LocalApi`]: ZoteroApiError::LocalApi
+    /// [`Network`]: ZoteroApiError::Network
+    /// [`Json`]: ZoteroApiError::Json
     #[inline]
     pub async fn find_duplicates<K: AsRef<str>>(
         &self,

@@ -36,9 +36,13 @@ impl ZoteroClient {
     ///
     /// # Errors
     ///
-    /// Returns [`ZoteroApiError::NotFound`] if `item_key` does not exist, or
-    /// [`ZoteroApiError::LocalApi`]/[`ZoteroApiError::Network`] on request
-    /// failure.
+    /// - [`NotFound`] if `item_key` does not exist
+    /// - [`LocalApi`] if Zotero returns a non-2xx status
+    /// - [`Network`] on connection failure
+    ///
+    /// [`NotFound`]: ZoteroApiError::NotFound
+    /// [`LocalApi`]: ZoteroApiError::LocalApi
+    /// [`Network`]: ZoteroApiError::Network
     #[inline]
     pub async fn get_related_items<K: AsRef<str>>(
         &self,
@@ -67,15 +71,20 @@ impl ZoteroClient {
     /// `dc:relation` map.
     ///
     /// The two PATCH requests are issued sequentially. If the second fails, the
-    /// first has already succeeded — resulting in a one-directional relation.
+    /// first has already succeeded, resulting in a one-directional relation.
     /// Callers should retry or reconcile on error.
     ///
     /// # Errors
     ///
-    /// Returns [`ZoteroApiError::InputRejected`] if `a` and `b` are the same
-    /// key, [`ZoteroApiError::NotFound`] if either item does not exist, or
-    /// [`ZoteroApiError::LocalApi`]/[`ZoteroApiError::Network`] if Zotero
-    /// rejects either update.
+    /// - [`InputRejected`] if `a` and `b` are the same key
+    /// - [`NotFound`] if either item does not exist
+    /// - [`LocalApi`] if Zotero rejects either update
+    /// - [`Network`] on connection failure
+    ///
+    /// [`InputRejected`]: ZoteroApiError::InputRejected
+    /// [`NotFound`]: ZoteroApiError::NotFound
+    /// [`LocalApi`]: ZoteroApiError::LocalApi
+    /// [`Network`]: ZoteroApiError::Network
     #[inline]
     pub async fn add_item_relation<K: AsRef<str>, V: AsRef<str>>(
         &self,
@@ -129,9 +138,13 @@ impl ZoteroClient {
     ///
     /// # Errors
     ///
-    /// Returns [`ZoteroApiError::NotFound`] if either item does not exist, or
-    /// [`ZoteroApiError::LocalApi`]/[`ZoteroApiError::Network`] if Zotero
-    /// rejects either update.
+    /// - [`NotFound`] if either item does not exist
+    /// - [`LocalApi`] if Zotero rejects either update
+    /// - [`Network`] on connection failure
+    ///
+    /// [`NotFound`]: ZoteroApiError::NotFound
+    /// [`LocalApi`]: ZoteroApiError::LocalApi
+    /// [`Network`]: ZoteroApiError::Network
     #[inline]
     pub async fn remove_item_relation<K: AsRef<str>, V: AsRef<str>>(
         &self,

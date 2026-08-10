@@ -45,7 +45,7 @@ impl ZoteroClient {
     ///
     /// Notes and annotations are excluded. The `limit` parameter caps the
     /// number of items returned (capped server-side by Zotero).
-    #[inline]
+    ///
     /// # Errors
     ///
     /// - [`LocalApi`] if Zotero returns a non-2xx status
@@ -55,6 +55,7 @@ impl ZoteroClient {
     /// [`LocalApi`]: ZoteroApiError::LocalApi
     /// [`Network`]: ZoteroApiError::Network
     /// [`Json`]: ZoteroApiError::Json
+    #[inline]
     pub async fn get_recent_items(
         &self,
         limit: usize,
@@ -76,7 +77,7 @@ impl ZoteroClient {
     /// Pages through the Zotero API in batches of 100, concatenating results.
     /// Notes and annotations are excluded. Returns the full set of matching
     /// items as a single `Vec`.
-    #[inline]
+    ///
     /// # Errors
     ///
     /// - [`LocalApi`] if any page request returns a non-2xx status
@@ -86,6 +87,7 @@ impl ZoteroClient {
     /// [`LocalApi`]: ZoteroApiError::LocalApi
     /// [`Network`]: ZoteroApiError::Network
     /// [`Json`]: ZoteroApiError::Json
+    #[inline]
     pub async fn get_all_items(
         &self,
     ) -> Result<Vec<ZoteroItem>, ZoteroApiError> {
@@ -98,7 +100,7 @@ impl ZoteroClient {
     }
 
     /// Fetches a single [`ZoteroItem`] by its key.
-    #[inline]
+    ///
     /// # Errors
     ///
     /// - [`NotFound`] if no item with `item_key` exists
@@ -108,6 +110,7 @@ impl ZoteroClient {
     /// [`NotFound`]: ZoteroApiError::NotFound
     /// [`LocalApi`]: ZoteroApiError::LocalApi
     /// [`Network`]: ZoteroApiError::Network
+    #[inline]
     pub async fn get_item<K: AsRef<str>>(
         &self,
         item_key: K,

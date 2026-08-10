@@ -348,8 +348,13 @@ impl ZoteroClient {
     ///
     /// # Errors
     ///
-    /// Returns [`ZoteroApiError::LocalApi`]/[`ZoteroApiError::Network`]/
-    /// [`ZoteroApiError::Json`] if any page request fails.
+    /// - [`LocalApi`] if Zotero returns a non-2xx status
+    /// - [`Network`] if any page request fails
+    /// - [`Json`] if any page cannot be deserialized
+    ///
+    /// [`LocalApi`]: ZoteroApiError::LocalApi
+    /// [`Network`]: ZoteroApiError::Network
+    /// [`Json`]: ZoteroApiError::Json
     #[inline]
     pub async fn get_all_json<T: DeserializeOwned>(
         &self,
@@ -521,7 +526,9 @@ impl<'a> ApiRequestBuilder<'a> {
     ///
     /// # Errors
     ///
-    /// Returns [`ZoteroApiError::Network`] if all retry attempts fail.
+    /// - [`Network`] if all retry attempts fail
+    ///
+    /// [`Network`]: ZoteroApiError::Network
     #[inline]
     pub async fn send_raw(&self) -> Result<reqwest::Response, ZoteroApiError> {
         let full_url = if self.path.starts_with("http://")
@@ -601,10 +608,15 @@ impl<'a> ApiRequestBuilder<'a> {
     ///
     /// # Errors
     ///
-    /// Returns [`ZoteroApiError::LocalApi`] or
-    /// [`ZoteroApiError::VersionConflict`] if the response status is not
-    /// 2xx, or [`ZoteroApiError::Network`] / [`ZoteroApiError::Json`] if
-    /// the request fails or the body cannot be decoded.
+    /// - [`LocalApi`] if Zotero returns a non-2xx status
+    /// - [`VersionConflict`] if Zotero rejects a stale write
+    /// - [`Network`] if the request fails
+    /// - [`Json`] if the body cannot be decoded
+    ///
+    /// [`LocalApi`]: ZoteroApiError::LocalApi
+    /// [`VersionConflict`]: ZoteroApiError::VersionConflict
+    /// [`Network`]: ZoteroApiError::Network
+    /// [`Json`]: ZoteroApiError::Json
     #[inline]
     pub async fn send<T: DeserializeOwned>(
         &self,
@@ -651,11 +663,17 @@ impl<'a> ApiRequestBuilder<'a> {
     ///
     /// # Errors
     ///
-    /// Returns [`ZoteroApiError::NotFound`] for 404,
-    /// [`ZoteroApiError::LocalApi`] or [`ZoteroApiError::VersionConflict`] for
-    /// other non-2xx statuses, or [`ZoteroApiError::Network`] /
-    /// [`ZoteroApiError::Json`] if the request fails or the body cannot be
-    /// decoded.
+    /// - [`NotFound`] if Zotero returns 404
+    /// - [`LocalApi`] if Zotero returns another non-2xx status
+    /// - [`VersionConflict`] if Zotero rejects a stale write
+    /// - [`Network`] if the request fails
+    /// - [`Json`] if the body cannot be decoded
+    ///
+    /// [`NotFound`]: ZoteroApiError::NotFound
+    /// [`LocalApi`]: ZoteroApiError::LocalApi
+    /// [`VersionConflict`]: ZoteroApiError::VersionConflict
+    /// [`Network`]: ZoteroApiError::Network
+    /// [`Json`]: ZoteroApiError::Json
     #[inline]
     pub async fn send_or_not_found<
         T: DeserializeOwned,
@@ -678,9 +696,13 @@ impl<'a> ApiRequestBuilder<'a> {
     ///
     /// # Errors
     ///
-    /// Returns [`ZoteroApiError::LocalApi`] or
-    /// [`ZoteroApiError::VersionConflict`] if the response status is not 2xx,
-    /// or [`ZoteroApiError::Network`] if the request fails.
+    /// - [`LocalApi`] if Zotero returns a non-2xx status
+    /// - [`VersionConflict`] if Zotero rejects a stale write
+    /// - [`Network`] if the request fails
+    ///
+    /// [`LocalApi`]: ZoteroApiError::LocalApi
+    /// [`VersionConflict`]: ZoteroApiError::VersionConflict
+    /// [`Network`]: ZoteroApiError::Network
     #[inline]
     pub async fn send_unit(&self) -> Result<(), ZoteroApiError> {
         ensure_success(self.send_raw().await?).await?;
@@ -1027,7 +1049,7 @@ pub mod test_http {
 
     /// # Errors
     ///
-    /// Returns an error if the request body is not valid JSON.
+    /// - [`serde_json::Error`] if the request body is not valid JSON
     #[inline]
     pub fn request_body(
         raw: &str,

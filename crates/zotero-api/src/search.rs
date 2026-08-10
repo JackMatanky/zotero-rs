@@ -140,11 +140,17 @@ impl ZoteroClient {
     ///
     /// When `collection_key` is provided, results are scoped to that
     /// collection. Notes are excluded from results.
-    #[inline]
+    ///
     /// # Errors
     ///
-    /// Returns [`ZoteroApiError::LocalApi`]/[`ZoteroApiError::Network`]/
-    /// [`ZoteroApiError::Json`] if the request fails.
+    /// - [`LocalApi`] if Zotero returns a non-2xx status
+    /// - [`Network`] on connection failure
+    /// - [`Json`] if the response cannot be deserialized
+    ///
+    /// [`LocalApi`]: ZoteroApiError::LocalApi
+    /// [`Network`]: ZoteroApiError::Network
+    /// [`Json`]: ZoteroApiError::Json
+    #[inline]
     pub async fn search_items<K: AsRef<str>>(
         &self,
         query: &str,
@@ -181,10 +187,16 @@ impl ZoteroClient {
     /// Searches library items tagged with `tag`.
     ///
     /// Notes are excluded from results.
+    ///
     /// # Errors
     ///
-    /// Returns [`ZoteroApiError::LocalApi`]/[`ZoteroApiError::Network`]/
-    /// [`ZoteroApiError::Json`] if the request fails.
+    /// - [`LocalApi`] if Zotero returns a non-2xx status
+    /// - [`Network`] on connection failure
+    /// - [`Json`] if the response cannot be deserialized
+    ///
+    /// [`LocalApi`]: ZoteroApiError::LocalApi
+    /// [`Network`]: ZoteroApiError::Network
+    /// [`Json`]: ZoteroApiError::Json
     #[inline]
     pub async fn search_by_tag<K: AsRef<str>>(
         &self,
@@ -206,10 +218,16 @@ impl ZoteroClient {
     /// Returns `Ok(None)` when no item matches. The search is case-insensitive
     /// and checks both the `citationKey` field and common `extra`-field
     /// variants (`citation key:`, `citationkey:`).
+    ///
     /// # Errors
     ///
-    /// Returns [`ZoteroApiError::LocalApi`]/[`ZoteroApiError::Network`]/
-    /// [`ZoteroApiError::Json`] if the underlying search request fails.
+    /// - [`LocalApi`] if Zotero returns a non-2xx status
+    /// - [`Network`] on connection failure
+    /// - [`Json`] if the underlying search response cannot be deserialized
+    ///
+    /// [`LocalApi`]: ZoteroApiError::LocalApi
+    /// [`Network`]: ZoteroApiError::Network
+    /// [`Json`]: ZoteroApiError::Json
     #[inline]
     pub async fn search_by_citation_key<K: AsRef<str>>(
         &self,
@@ -275,8 +293,13 @@ impl ZoteroClient {
     ///
     /// # Errors
     ///
-    /// Returns [`ZoteroApiError::LocalApi`]/[`ZoteroApiError::Network`]/
-    /// [`ZoteroApiError::Json`] if the underlying HTTP request fails.
+    /// - [`LocalApi`] if Zotero returns a non-2xx status
+    /// - [`Network`] on connection failure
+    /// - [`Json`] if an underlying response cannot be deserialized
+    ///
+    /// [`LocalApi`]: ZoteroApiError::LocalApi
+    /// [`Network`]: ZoteroApiError::Network
+    /// [`Json`]: ZoteroApiError::Json
     #[expect(
         clippy::too_many_arguments,
         reason = "six orthogonal search parameters; a params struct adds \

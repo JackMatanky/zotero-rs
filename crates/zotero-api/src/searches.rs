@@ -45,8 +45,13 @@ impl ZoteroClient {
     ///
     /// # Errors
     ///
-    /// Returns [`ZoteroApiError::LocalApi`], [`ZoteroApiError::Network`], or
-    /// [`ZoteroApiError::Json`] if the request fails.
+    /// - [`LocalApi`] if Zotero returns a non-2xx status
+    /// - [`Network`] on connection failure
+    /// - [`Json`] if the response cannot be deserialized
+    ///
+    /// [`LocalApi`]: ZoteroApiError::LocalApi
+    /// [`Network`]: ZoteroApiError::Network
+    /// [`Json`]: ZoteroApiError::Json
     #[inline]
     pub async fn list_searches(
         &self,
@@ -60,8 +65,13 @@ impl ZoteroClient {
     ///
     /// # Errors
     ///
-    /// Returns [`ZoteroApiError::LocalApi`], [`ZoteroApiError::Network`], or
-    /// [`ZoteroApiError::Json`] if the request fails.
+    /// - [`LocalApi`] if Zotero returns a non-2xx status
+    /// - [`Network`] on connection failure
+    /// - [`Json`] if the response cannot be deserialized
+    ///
+    /// [`LocalApi`]: ZoteroApiError::LocalApi
+    /// [`Network`]: ZoteroApiError::Network
+    /// [`Json`]: ZoteroApiError::Json
     #[inline]
     pub async fn get_search<K: AsRef<str>>(
         &self,
@@ -81,8 +91,13 @@ impl ZoteroClient {
     ///
     /// # Errors
     ///
-    /// Returns [`ZoteroApiError::LocalApi`], [`ZoteroApiError::Network`],
-    /// or [`ZoteroApiError::Json`] if the request fails.
+    /// - [`LocalApi`] if Zotero returns a non-2xx status
+    /// - [`Network`] on connection failure
+    /// - [`Json`] if the response cannot be deserialized
+    ///
+    /// [`LocalApi`]: ZoteroApiError::LocalApi
+    /// [`Network`]: ZoteroApiError::Network
+    /// [`Json`]: ZoteroApiError::Json
     #[inline]
     pub async fn execute_saved_search<K: AsRef<str>>(
         &self,
@@ -101,8 +116,11 @@ impl ZoteroClient {
     ///
     /// # Errors
     ///
-    /// Returns [`ZoteroApiError::LocalApi`] if Zotero rejects the creation
-    /// request, or [`ZoteroApiError::Network`] if the request fails.
+    /// - [`LocalApi`] if Zotero rejects the creation request
+    /// - [`Network`] on connection failure
+    ///
+    /// [`LocalApi`]: ZoteroApiError::LocalApi
+    /// [`Network`]: ZoteroApiError::Network
     #[inline]
     pub async fn create_searches(
         &self,
@@ -120,8 +138,11 @@ impl ZoteroClient {
     ///
     /// # Errors
     ///
-    /// Returns [`ZoteroApiError::LocalApi`] or [`ZoteroApiError::Network`] if
-    /// Zotero rejects the deletion request.
+    /// - [`LocalApi`] if Zotero rejects the deletion request
+    /// - [`Network`] on connection failure
+    ///
+    /// [`LocalApi`]: ZoteroApiError::LocalApi
+    /// [`Network`]: ZoteroApiError::Network
     #[inline]
     pub async fn delete_searches<K: AsRef<str>, V: Into<u64>>(
         &self,

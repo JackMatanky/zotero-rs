@@ -8,13 +8,13 @@
 //!
 //! # Main Components
 //!
-//! - [`ZoteroClient`] — Core HTTP client for the Zotero Local API (items,
+//! - [`ZoteroClient`]: Core HTTP client for the Zotero Local API (items,
 //!   collections, tags, searches, keys).
-//! - [`BetterBibtexClient`] — Client for the Better BibTeX extension (citation
+//! - [`BetterBibtexClient`]: Client for the Better BibTeX extension (citation
 //!   keys, JSON-RPC auto-export, Aux scanning).
-//! - [`BetterNotesClient`] — Client for the Better Notes plugin (Markdown
+//! - [`BetterNotesClient`]: Client for the Better Notes plugin (Markdown
 //!   conversion, note exporting).
-//! - `LocalZoteroDb` (behind the `sqlite` feature) — Direct read-only SQLite
+//! - `LocalZoteroDb` (behind the `sqlite` feature): Direct read-only SQLite
 //!   database query interface.
 //!
 //! # Features

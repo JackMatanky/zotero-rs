@@ -23,8 +23,13 @@ impl ZoteroClient {
     ///
     /// # Errors
     ///
-    /// Returns [`ZoteroApiError::LocalApi`]/[`ZoteroApiError::Network`]/
-    /// [`ZoteroApiError::Json`] if the request fails.
+    /// - [`LocalApi`] if Zotero returns a non-2xx status
+    /// - [`Network`] on connection failure
+    /// - [`Json`] if the response cannot be deserialized
+    ///
+    /// [`LocalApi`]: ZoteroApiError::LocalApi
+    /// [`Network`]: ZoteroApiError::Network
+    /// [`Json`]: ZoteroApiError::Json
     #[inline]
     #[expect(clippy::else_if_without_else, reason = "fallback list handling")]
     pub async fn get_settings(
@@ -55,8 +60,13 @@ impl ZoteroClient {
     ///
     /// # Errors
     ///
-    /// Returns [`ZoteroApiError::LocalApi`]/[`ZoteroApiError::Network`]/
-    /// [`ZoteroApiError::Json`] if the request fails.
+    /// - [`LocalApi`] if Zotero returns a non-2xx status
+    /// - [`Network`] on connection failure
+    /// - [`Json`] if the response cannot be deserialized
+    ///
+    /// [`LocalApi`]: ZoteroApiError::LocalApi
+    /// [`Network`]: ZoteroApiError::Network
+    /// [`Json`]: ZoteroApiError::Json
     #[inline]
     pub async fn get_setting<K: AsRef<str>>(
         &self,
@@ -80,8 +90,11 @@ impl ZoteroClient {
     ///
     /// # Errors
     ///
-    /// Returns [`ZoteroApiError::LocalApi`]/[`ZoteroApiError::Network`] if
-    /// Zotero rejects the setting update.
+    /// - [`LocalApi`] if Zotero rejects the setting update
+    /// - [`Network`] on connection failure
+    ///
+    /// [`LocalApi`]: ZoteroApiError::LocalApi
+    /// [`Network`]: ZoteroApiError::Network
     #[inline]
     pub async fn update_setting<K: AsRef<str>>(
         &self,

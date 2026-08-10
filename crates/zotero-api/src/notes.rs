@@ -58,8 +58,11 @@ impl ZoteroClient {
     ///
     /// # Errors
     ///
-    /// Returns [`ZoteroApiError::LocalApi`] if Zotero rejects the request, or
-    /// [`ZoteroApiError::Network`] on transport failure.
+    /// - [`LocalApi`] if Zotero rejects the request
+    /// - [`Network`] on connection failure
+    ///
+    /// [`LocalApi`]: ZoteroApiError::LocalApi
+    /// [`Network`]: ZoteroApiError::Network
     #[inline]
     pub async fn create_note<K: AsRef<str>>(
         &self,
@@ -85,8 +88,11 @@ impl ZoteroClient {
     ///
     /// # Errors
     ///
-    /// Returns [`ZoteroApiError::LocalApi`] if Zotero rejects the request, or
-    /// [`ZoteroApiError::Network`] on transport failure.
+    /// - [`LocalApi`] if Zotero rejects the request
+    /// - [`Network`] on connection failure
+    ///
+    /// [`LocalApi`]: ZoteroApiError::LocalApi
+    /// [`Network`]: ZoteroApiError::Network
     #[inline]
     pub async fn create_annotation(
         &self,
@@ -118,9 +124,13 @@ impl ZoteroClient {
     ///
     /// # Errors
     ///
-    /// Returns [`ZoteroApiError::NotFound`] if `item_key` does not exist, or
-    /// [`ZoteroApiError::LocalApi`]/[`ZoteroApiError::Network`] if fetching
-    /// items fails.
+    /// - [`NotFound`] if `item_key` does not exist
+    /// - [`LocalApi`] if Zotero returns a non-2xx status
+    /// - [`Network`] on connection failure
+    ///
+    /// [`NotFound`]: ZoteroApiError::NotFound
+    /// [`LocalApi`]: ZoteroApiError::LocalApi
+    /// [`Network`]: ZoteroApiError::Network
     #[inline]
     pub async fn synthesize_annotations<K: AsRef<str>>(
         &self,

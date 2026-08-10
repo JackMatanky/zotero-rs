@@ -119,7 +119,7 @@ impl ItemType {
     /// indexing.
     ///
     /// Excludes [`Attachment`](Self::Attachment), [`Note`](Self::Note), and
-    /// [`Annotation`](Self::Annotation) — these are auxiliary content, not
+    /// [`Annotation`](Self::Annotation). These are auxiliary content, not
     /// standalone searchable items.
     ///
     /// # Examples
