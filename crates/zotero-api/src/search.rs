@@ -553,16 +553,16 @@ impl<T> PageAccumulator<T> {
     }
 
     fn into_page(self) -> SearchPage<T> {
-        let offset = self.offset.min(self.total);
         let returned = self.items.len();
+        let pagination = PaginationInfo::from_page(
+            self.offset,
+            self.limit,
+            returned,
+            Some(self.total),
+        );
         SearchPage {
             items: self.items,
-            pagination: PaginationInfo {
-                limit: self.limit,
-                offset,
-                total: self.total,
-                has_more: offset.saturating_add(returned) < self.total,
-            },
+            pagination,
         }
     }
 }
@@ -571,16 +571,12 @@ impl<T> PageAccumulator<T> {
 /// `offset`/`limit`.
 fn paginate<T>(results: Vec<T>, offset: usize, limit: usize) -> SearchPage<T> {
     let total = results.len();
-    let skip = offset.min(total);
-    let items: Vec<T> = results.into_iter().skip(skip).take(limit).collect();
+    let items: Vec<T> = results.into_iter().skip(offset).take(limit).collect();
+    let pagination =
+        PaginationInfo::from_page(offset, limit, items.len(), Some(total));
     SearchPage {
         items,
-        pagination: PaginationInfo {
-            limit,
-            offset: skip,
-            total,
-            has_more: skip.saturating_add(limit) < total,
-        },
+        pagination,
     }
 }
 
@@ -602,33 +598,24 @@ fn matches_creator_full_name(
     cond.matches_str(&full)
 }
 
-fn item_matches_conditions(
-    item: &ZoteroItem,
-    conditions: &[PreparedCondition<'_>],
-    join_mode: JoinMode,
-) -> bool {
-    match join_mode {
-        JoinMode::All => conditions.iter().all(|cond| cond.matches_item(item)),
-        JoinMode::Any => conditions.iter().any(|cond| cond.matches_item(item)),
-    }
-}
-
 /// Compares two date-or-year strings by their leading numeric components.
 fn compare_dates(a: &str, b: &str) -> std::cmp::Ordering {
-    date_key(a).cmp(&date_key(b))
+    DateKey::from(a).cmp(&DateKey::from(b))
 }
 
-fn date_key(s: &str) -> (u32, u32, u32) {
-    let mut parts = s.split('-').filter(|p| !p.is_empty());
-    (
-        next_date_part(&mut parts),
-        next_date_part(&mut parts),
-        next_date_part(&mut parts),
-    )
-}
+/// Leading `year-month-day` numeric components of a date-or-year string,
+/// parsed for ordering comparisons. Missing or non-numeric components sort
+/// as `0`.
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+struct DateKey(u32, u32, u32);
 
-fn next_date_part<'a>(parts: &mut impl Iterator<Item = &'a str>) -> u32 {
-    parts.next().and_then(|p| p.parse::<u32>().ok()).unwrap_or(0)
+impl From<&str> for DateKey {
+    fn from(s: &str) -> Self {
+        let mut parts = s.split('-').filter(|p| !p.is_empty());
+        let mut next_part =
+            || parts.next().and_then(|p| p.parse::<u32>().ok()).unwrap_or(0);
+        Self(next_part(), next_part(), next_part())
+    }
 }
 
 /// Sorts `items` by `field` in `direction` and returns the sorted items.
@@ -722,7 +709,14 @@ impl<'a> QueryBuilder<'a> {
     /// condition per `join_mode`.
     fn matches(&self, item: &ZoteroItem) -> bool {
         item.data.item_type.is_indexable()
-            && item_matches_conditions(item, &self.conditions, self.join_mode)
+            && match self.join_mode {
+                JoinMode::All => {
+                    self.conditions.iter().all(|cond| cond.matches_item(item))
+                }
+                JoinMode::Any => {
+                    self.conditions.iter().any(|cond| cond.matches_item(item))
+                }
+            }
     }
 
     /// Filters `items` against the configured conditions, applies the

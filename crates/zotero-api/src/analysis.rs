@@ -113,77 +113,87 @@ impl ZoteroClient {
             );
         }
 
-        Ok(classify_coverage_page(&page.items, &children_by_idx, pagination))
+        Ok(LibraryCoveragePage::build(
+            &page.items,
+            &children_by_idx,
+            pagination,
+        ))
     }
 }
 
-/// Evaluates PDF, DOI, and note availability flags for a single `item`.
-fn coverage_flags(
-    item: &ZoteroItem,
-    children: &[ZoteroItem],
-) -> ItemCoverageFlags {
-    let has_doi =
-        item.data.doi.as_deref().is_some_and(|d| !d.trim().is_empty());
-    let has_pdf = children.iter().any(|child| {
-        child.data.item_type == ItemType::Attachment
-            && child
-                .data
-                .content_type
-                .as_deref()
-                .is_some_and(|ct| ct.contains("pdf"))
-    });
-    let has_notes =
-        children.iter().any(|child| child.data.item_type == ItemType::Note);
+impl ItemCoverageFlags {
+    /// Evaluates PDF, DOI, and note availability flags for a single `item`.
+    fn evaluate(item: &ZoteroItem, children: &[ZoteroItem]) -> Self {
+        let has_doi =
+            item.data.doi.as_deref().is_some_and(|d| !d.trim().is_empty());
+        let has_pdf = children.iter().any(|child| {
+            child.data.item_type == ItemType::Attachment
+                && child
+                    .data
+                    .content_type
+                    .as_deref()
+                    .is_some_and(|ct| ct.contains("pdf"))
+        });
+        let has_notes =
+            children.iter().any(|child| child.data.item_type == ItemType::Note);
 
-    ItemCoverageFlags {
-        has_pdf,
-        has_doi,
-        has_notes,
+        Self {
+            has_pdf,
+            has_doi,
+            has_notes,
+        }
     }
 }
 
-fn classify_coverage_page(
-    selected: &[ZoteroItem],
-    children_by_idx: &[Vec<ZoteroItem>],
-    pagination: PaginationInfo,
-) -> LibraryCoveragePage {
-    let mut flags = Vec::with_capacity(selected.len());
-    for (item, children) in selected.iter().zip(children_by_idx) {
-        flags.push(coverage_flags(item, children));
-    }
-    LibraryCoveragePage {
-        coverage: classify_coverage(&flags),
-        pagination,
+impl LibraryCoveragePage {
+    /// Evaluates `selected` items against their fetched `children_by_idx`
+    /// and aggregates the result into a coverage page.
+    fn build(
+        selected: &[ZoteroItem],
+        children_by_idx: &[Vec<ZoteroItem>],
+        pagination: PaginationInfo,
+    ) -> Self {
+        let flags: Vec<ItemCoverageFlags> = selected
+            .iter()
+            .zip(children_by_idx)
+            .map(|(item, children)| ItemCoverageFlags::evaluate(item, children))
+            .collect();
+        Self {
+            coverage: LibraryCoverage::aggregate(&flags),
+            pagination,
+        }
     }
 }
 
-/// Aggregates coverage flags across library items into [`LibraryCoverage`].
-fn classify_coverage(flags: &[ItemCoverageFlags]) -> LibraryCoverage {
-    let total = flags.len();
-    if total == 0 {
-        return LibraryCoverage {
-            total_items: 0,
-            with_pdf: 0,
-            with_doi: 0,
-            with_notes: 0,
-            pdf_percentage: 0.0,
-            doi_percentage: 0.0,
-            notes_percentage: 0.0,
-        };
-    }
+impl LibraryCoverage {
+    /// Aggregates per-item coverage flags into library-wide totals.
+    fn aggregate(flags: &[ItemCoverageFlags]) -> Self {
+        let total = flags.len();
+        if total == 0 {
+            return Self {
+                total_items: 0,
+                with_pdf: 0,
+                with_doi: 0,
+                with_notes: 0,
+                pdf_percentage: 0.0,
+                doi_percentage: 0.0,
+                notes_percentage: 0.0,
+            };
+        }
 
-    let with_pdf = flags.iter().filter(|f| f.has_pdf).count();
-    let with_doi = flags.iter().filter(|f| f.has_doi).count();
-    let with_notes = flags.iter().filter(|f| f.has_notes).count();
+        let with_pdf = flags.iter().filter(|f| f.has_pdf).count();
+        let with_doi = flags.iter().filter(|f| f.has_doi).count();
+        let with_notes = flags.iter().filter(|f| f.has_notes).count();
 
-    LibraryCoverage {
-        total_items: total,
-        with_pdf,
-        with_doi,
-        with_notes,
-        pdf_percentage: compute_percentage(with_pdf, total),
-        doi_percentage: compute_percentage(with_doi, total),
-        notes_percentage: compute_percentage(with_notes, total),
+        Self {
+            total_items: total,
+            with_pdf,
+            with_doi,
+            with_notes,
+            pdf_percentage: compute_percentage(with_pdf, total),
+            doi_percentage: compute_percentage(with_doi, total),
+            notes_percentage: compute_percentage(with_notes, total),
+        }
     }
 }
 
@@ -252,53 +262,58 @@ impl ZoteroClient {
             self.get_all_items().await?
         };
 
-        Ok(find_duplicate_groups(&items))
+        Ok(DuplicateGroup::find_all(&items))
     }
 }
 
-/// Group items by matching DOI or title to identify potential duplicate items.
-fn find_duplicate_groups(items: &[ZoteroItem]) -> Vec<DuplicateGroup> {
-    let mut doi_map: std::collections::BTreeMap<String, Vec<&ZoteroItem>> =
-        std::collections::BTreeMap::new();
-    let mut title_map: std::collections::BTreeMap<String, Vec<&ZoteroItem>> =
-        std::collections::BTreeMap::new();
+impl DuplicateGroup {
+    /// Groups `items` by matching DOI or title to identify potential
+    /// duplicates.
+    fn find_all(items: &[ZoteroItem]) -> Vec<Self> {
+        let mut doi_map: std::collections::BTreeMap<String, Vec<&ZoteroItem>> =
+            std::collections::BTreeMap::new();
+        let mut title_map: std::collections::BTreeMap<
+            String,
+            Vec<&ZoteroItem>,
+        > = std::collections::BTreeMap::new();
 
-    for item in items {
-        if let Some(doi) = item.data.doi.as_deref() {
-            if !doi.trim().is_empty() {
-                doi_map
-                    .entry(doi.trim().to_lowercase())
-                    .or_default()
-                    .push(item);
+        for item in items {
+            if let Some(doi) = item.data.doi.as_deref() {
+                if !doi.trim().is_empty() {
+                    doi_map
+                        .entry(doi.trim().to_lowercase())
+                        .or_default()
+                        .push(item);
+                }
+            }
+            if let Some(title) = &item.data.title {
+                let t = title.trim().to_lowercase();
+                if t.len() > 5 {
+                    title_map.entry(t).or_default().push(item);
+                }
             }
         }
-        if let Some(ref title) = item.data.title {
-            let t = title.trim().to_lowercase();
-            if t.len() > 5 {
-                title_map.entry(t).or_default().push(item);
+
+        let mut duplicates = Vec::new();
+        for (doi, grouped) in doi_map {
+            if grouped.len() > 1 {
+                duplicates.push(Self {
+                    match_type: DuplicateType::Doi,
+                    match_value: doi,
+                    item_keys: grouped.iter().map(|i| i.key.clone()).collect(),
+                });
             }
         }
-    }
-
-    let mut duplicates = Vec::new();
-    for (doi, grouped) in doi_map {
-        if grouped.len() > 1 {
-            duplicates.push(DuplicateGroup {
-                match_type: DuplicateType::Doi,
-                match_value: doi,
-                item_keys: grouped.iter().map(|i| i.key.clone()).collect(),
-            });
+        for (title, grouped) in title_map {
+            if grouped.len() > 1 {
+                duplicates.push(Self {
+                    match_type: DuplicateType::Title,
+                    match_value: title,
+                    item_keys: grouped.iter().map(|i| i.key.clone()).collect(),
+                });
+            }
         }
-    }
-    for (title, grouped) in title_map {
-        if grouped.len() > 1 {
-            duplicates.push(DuplicateGroup {
-                match_type: DuplicateType::Title,
-                match_value: title,
-                item_keys: grouped.iter().map(|i| i.key.clone()).collect(),
-            });
-        }
-    }
 
-    duplicates
+        duplicates
+    }
 }
