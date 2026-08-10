@@ -106,6 +106,7 @@ impl BetterBibtexClient {
     }
 
     /// Exports items identified by `citekeys` formatted with `translator`.
+    ///
     /// # Errors
     ///
     /// - [`BetterBibTeX`] if the JSON-RPC call fails or returns an RPC error
@@ -129,6 +130,7 @@ impl BetterBibtexClient {
     /// When `format` is [`None`], Better BibTeX uses its configured default
     /// bibliography output. Pass [`BibliographyFormat`] to choose the content
     /// type, CSL style, locale, or quick-copy behavior for this call.
+    ///
     /// # Errors
     ///
     /// - [`BetterBibTeX`] if the JSON-RPC call fails or returns an RPC error
@@ -153,6 +155,7 @@ impl BetterBibtexClient {
     }
 
     /// Triggers citation key regeneration for `citekeys`.
+    ///
     /// # Errors
     ///
     /// - [`BetterBibTeX`] if the JSON-RPC call fails or returns an RPC error
@@ -177,6 +180,7 @@ impl BetterBibtexClient {
     /// auto-export configuration. `Some(false)` asks Better BibTeX not to
     /// replace one. [`None`] omits the flag and leaves the plugin default in
     /// control.
+    ///
     /// # Errors
     ///
     /// - [`BetterBibTeX`] if the JSON-RPC call fails or returns an RPC error
@@ -216,6 +220,7 @@ impl BetterBibtexClient {
     /// Better BibTeX reads `\citation{...}` entries from the `.aux` file at
     /// `aux_path`, resolves the citation keys, and adds matching Zotero items
     /// to `collection`.
+    ///
     /// # Errors
     ///
     /// - [`BetterBibTeX`] if the JSON-RPC call fails or returns an RPC error
@@ -235,6 +240,7 @@ impl BetterBibtexClient {
     }
 
     /// Executes a search query string against Better `BibTeX` library indexes.
+    ///
     /// # Errors
     ///
     /// - [`BetterBibTeX`] if the JSON-RPC call fails or returns an RPC error
@@ -253,6 +259,7 @@ impl BetterBibtexClient {
     }
 
     /// Fetches Pandoc citeproc filter metadata for `citekeys`.
+    ///
     /// # Errors
     ///
     /// - [`BetterBibTeX`] if the JSON-RPC call fails or returns an RPC error
