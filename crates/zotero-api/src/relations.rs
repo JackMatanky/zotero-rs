@@ -31,8 +31,7 @@ impl ZoteroClient {
     ///
     /// Each URI in the item's `relations` map is resolved by fetching the
     /// corresponding item. URIs that don't match the Zotero item key format
-    /// (e.g. external URLs) are silently skipped, as are items that return
-    /// 404.
+    /// (e.g. external URLs) are silently skipped, as are items that return 404.
     ///
     /// # Errors
     ///
