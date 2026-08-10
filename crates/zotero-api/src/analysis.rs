@@ -1,5 +1,4 @@
-//! Client-side library analytics: coverage statistics and duplicate
-//! detection.
+//! Client-side library analytics: coverage statistics and duplicate detection.
 //!
 //! These operations fetch items via [`ZoteroClient`] and compute aggregate
 //! metrics client-side; none of them are Zotero API endpoints.
