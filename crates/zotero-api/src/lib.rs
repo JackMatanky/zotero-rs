@@ -1,26 +1,40 @@
-//! Domain library for the Zotero Local API, Better `BibTeX`, and Better
+//! Async client and types for the Zotero Local API, Better BibTeX, and Better
 //! Notes.
 //!
-//! `zotero-api` provides strongly-typed, async Rust abstractions for inspecting
-//! and mutating local Zotero reference management libraries. It supports the
-//! HTTP Local API, Better `BibTeX` export engine, Better Notes companion
-//! plugin, and local `SQLite` database access.
+//! `zotero-api` provides typed, async Rust abstractions for inspecting and
+//! mutating local Zotero reference management libraries via the HTTP Local API,
+//! Better BibTeX export engine, Better Notes companion plugin, and read-only
+//! SQLite database access.
 //!
 //! # Main Components
 //!
-//! - [`ZoteroClient`]: Core HTTP client for the Zotero Local API (items,
+//! - [`ZoteroClient`] — Core HTTP client for the Zotero Local API (items,
 //!   collections, tags, searches, keys).
-//! - [`BetterBibtexClient`]: Client for the Better `BibTeX` extension (citation
+//! - [`BetterBibtexClient`] — Client for the Better BibTeX extension (citation
 //!   keys, JSON-RPC auto-export, Aux scanning).
-//! - [`BetterNotesClient`]: Client for the Better Notes plugin (Markdown
+//! - [`BetterNotesClient`] — Client for the Better Notes plugin (Markdown
 //!   conversion, note exporting).
-//! - [`LocalZoteroDb`]: Direct read-only `SQLite` database query interface.
+//! - `LocalZoteroDb` (behind the `sqlite` feature) — Direct read-only SQLite
+//!   database query interface.
+//!
+//! # Features
+//!
+//! | Feature     | Description                                            |
+//! |-------------|--------------------------------------------------------|
+//! | `metadata`  | Enables `resolve_metadata` for identifier resolution.  |
+//! | `pdf`       | Enables PDF annotation extraction and export.           |
+//! | `sqlite`    | Enables `LocalZoteroDb` for direct SQLite access.      |
+//! | `test-util` | Exposes test helpers and fixtures for downstream tests. |
+//! | `full`      | Enables all optional features.                         |
+//!
 //! # Examples
 //!
-//! ```no_run
-//! use zotero_api::ZoteroClient;
+//! Check whether a local Zotero instance is reachable:
 //!
-//! # async fn run() -> Result<(), zotero_api::ZoteroApiError> {
+//! ```no_run
+//! use zotero_api::{ZoteroApiError, ZoteroClient};
+//!
+//! # async fn run() -> Result<(), ZoteroApiError> {
 //! let client = ZoteroClient::new("http://127.0.0.1:23119/api");
 //! let status = client.check_status().await;
 //! println!("Status online: {}", status.online);
