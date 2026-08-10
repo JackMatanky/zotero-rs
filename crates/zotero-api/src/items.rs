@@ -48,9 +48,13 @@ impl ZoteroClient {
     #[inline]
     /// # Errors
     ///
-    /// Returns [`ZoteroApiError::LocalApi`] if Zotero returns a non-2xx status,
-    /// [`ZoteroApiError::Network`] on connection failure, or
-    /// [`ZoteroApiError::Json`] if the response cannot be deserialized.
+    /// - [`LocalApi`] if Zotero returns a non-2xx status
+    /// - [`Network`] on connection failure
+    /// - [`Json`] if the response cannot be deserialized
+    ///
+    /// [`LocalApi`]: ZoteroApiError::LocalApi
+    /// [`Network`]: ZoteroApiError::Network
+    /// [`Json`]: ZoteroApiError::Json
     pub async fn get_recent_items(
         &self,
         limit: usize,
@@ -75,9 +79,13 @@ impl ZoteroClient {
     #[inline]
     /// # Errors
     ///
-    /// Returns [`ZoteroApiError::LocalApi`] if any page request returns a
-    /// non-2xx status, [`ZoteroApiError::Network`] on connection failure, or
-    /// [`ZoteroApiError::Json`] if any page cannot be deserialized.
+    /// - [`LocalApi`] if any page request returns a non-2xx status
+    /// - [`Network`] on connection failure
+    /// - [`Json`] if any page cannot be deserialized
+    ///
+    /// [`LocalApi`]: ZoteroApiError::LocalApi
+    /// [`Network`]: ZoteroApiError::Network
+    /// [`Json`]: ZoteroApiError::Json
     pub async fn get_all_items(
         &self,
     ) -> Result<Vec<ZoteroItem>, ZoteroApiError> {
@@ -93,9 +101,13 @@ impl ZoteroClient {
     #[inline]
     /// # Errors
     ///
-    /// Returns [`ZoteroApiError::NotFound`] if no item with `item_key` exists,
-    /// [`ZoteroApiError::LocalApi`] if Zotero returns a non-2xx status, or
-    /// [`ZoteroApiError::Network`] on connection failure.
+    /// - [`NotFound`] if no item with `item_key` exists
+    /// - [`LocalApi`] if Zotero returns a non-2xx status
+    /// - [`Network`] on connection failure
+    ///
+    /// [`NotFound`]: ZoteroApiError::NotFound
+    /// [`LocalApi`]: ZoteroApiError::LocalApi
+    /// [`Network`]: ZoteroApiError::Network
     pub async fn get_item<K: AsRef<str>>(
         &self,
         item_key: K,
@@ -113,12 +125,17 @@ impl ZoteroClient {
     /// Returns items from [`/items/top`](ZoteroClient) filtered client-side to
     /// those with empty `collections` arrays. The `limit` parameter caps the
     /// initial page size.
-    #[inline]
+    ///
     /// # Errors
     ///
-    /// Returns [`ZoteroApiError::LocalApi`] if Zotero returns a non-2xx status,
-    /// [`ZoteroApiError::Network`] on connection failure, or
-    /// [`ZoteroApiError::Json`] if the response cannot be deserialized.
+    /// - [`LocalApi`] if Zotero returns a non-2xx status
+    /// - [`Network`] on connection failure
+    /// - [`Json`] if the response cannot be deserialized
+    ///
+    /// [`LocalApi`]: ZoteroApiError::LocalApi
+    /// [`Network`]: ZoteroApiError::Network
+    /// [`Json`]: ZoteroApiError::Json
+    #[inline]
     pub async fn get_unfiled_items(
         &self,
         limit: usize,
@@ -136,12 +153,17 @@ impl ZoteroClient {
     }
 
     /// Fetches child items of the given [`ZoteroItem`].
-    #[inline]
+    ///
     /// # Errors
     ///
-    /// Returns [`ZoteroApiError::LocalApi`] if Zotero returns a non-2xx status,
-    /// [`ZoteroApiError::Network`] on connection failure, or
-    /// [`ZoteroApiError::Json`] if the response cannot be deserialized.
+    /// - [`LocalApi`] if Zotero returns a non-2xx status
+    /// - [`Network`] on connection failure
+    /// - [`Json`] if the response cannot be deserialized
+    ///
+    /// [`LocalApi`]: ZoteroApiError::LocalApi
+    /// [`Network`]: ZoteroApiError::Network
+    /// [`Json`]: ZoteroApiError::Json
+    #[inline]
     pub async fn get_item_children<K: AsRef<str>>(
         &self,
         item_key: K,
@@ -156,12 +178,18 @@ impl ZoteroClient {
     ///
     /// Sends a `PATCH` with the provided JSON fields. If Zotero returns an
     /// empty body, the item is re-fetched automatically.
-    #[inline]
+    ///
     /// # Errors
     ///
-    /// Returns [`ZoteroApiError::LocalApi`] if Zotero rejects the patch
-    /// payload or the item version is stale, or
-    /// [`ZoteroApiError::Network`] on connection failure.
+    /// - [`LocalApi`] if Zotero rejects the patch payload or the item version
+    ///   is stale
+    /// - [`Network`] on connection failure
+    /// - [`Json`] if the response cannot be deserialized
+    ///
+    /// [`LocalApi`]: ZoteroApiError::LocalApi
+    /// [`Network`]: ZoteroApiError::Network
+    /// [`Json`]: ZoteroApiError::Json
+    #[inline]
     pub async fn update_item<K: AsRef<str>>(
         &self,
         item_key: K,
@@ -179,12 +207,16 @@ impl ZoteroClient {
     ///
     /// Fetches the current version first to send an `If-Unmodified-Since`
     /// header, preventing concurrent modification.
-    #[inline]
     /// # Errors
     ///
-    /// Returns [`ZoteroApiError::NotFound`] if no item exists with `item_key`,
-    /// [`ZoteroApiError::LocalApi`] if Zotero rejects the deletion (e.g.
-    /// version conflict), or [`ZoteroApiError::Network`] on connection failure.
+    /// - [`NotFound`] if no item exists with `item_key`
+    /// - [`LocalApi`] if Zotero rejects the deletion (e.g. version conflict)
+    /// - [`Network`] on connection failure
+    ///
+    /// [`NotFound`]: ZoteroApiError::NotFound
+    /// [`LocalApi`]: ZoteroApiError::LocalApi
+    /// [`Network`]: ZoteroApiError::Network
+    #[inline]
     pub async fn delete_item<K: AsRef<str>>(
         &self,
         item_key: K,
@@ -202,12 +234,17 @@ impl ZoteroClient {
     ///
     /// Uses [`TrashAction`] to select the direction. Fetches the current
     /// version to avoid stale writes.
-    #[inline]
+    ///
     /// # Errors
     ///
-    /// Returns [`ZoteroApiError::NotFound`] if no item exists with `item_key`,
-    /// [`ZoteroApiError::LocalApi`] if Zotero rejects the update (e.g. version
-    /// conflict), or [`ZoteroApiError::Network`] on connection failure.
+    /// - [`NotFound`] if no item exists with `item_key`
+    /// - [`LocalApi`] if Zotero rejects the update (e.g. version conflict)
+    /// - [`Network`] on connection failure
+    ///
+    /// [`NotFound`]: ZoteroApiError::NotFound
+    /// [`LocalApi`]: ZoteroApiError::LocalApi
+    /// [`Network`]: ZoteroApiError::Network
+    #[inline]
     pub async fn set_item_deleted<K: AsRef<str>>(
         &self,
         item_key: K,
@@ -229,12 +266,17 @@ impl ZoteroClient {
     ///
     /// Sends the draft as a single-element JSON array to `POST /items` and
     /// returns the created item.
-    #[inline]
+    ///
     /// # Errors
     ///
-    /// Returns [`ZoteroApiError::LocalApi`] if Zotero returns a non-2xx status,
-    /// [`ZoteroApiError::Network`] on connection failure, or
-    /// [`ZoteroApiError::Json`] if the response cannot be deserialized.
+    /// - [`LocalApi`] if Zotero returns a non-2xx status
+    /// - [`Network`] on connection failure
+    /// - [`Json`] if the response cannot be deserialized
+    ///
+    /// [`LocalApi`]: ZoteroApiError::LocalApi
+    /// [`Network`]: ZoteroApiError::Network
+    /// [`Json`]: ZoteroApiError::Json
+    #[inline]
     pub async fn create_item_from_metadata(
         &self,
         draft: ItemDraft,
@@ -245,12 +287,17 @@ impl ZoteroClient {
     }
 
     /// Batch-creates multiple items from a JSON array.
-    #[inline]
+    ///
     /// # Errors
     ///
-    /// Returns [`ZoteroApiError::LocalApi`] if Zotero rejects the batch
-    /// payload, [`ZoteroApiError::Network`] on connection failure, or
-    /// [`ZoteroApiError::Json`] if the response cannot be deserialized.
+    /// - [`LocalApi`] if Zotero rejects the batch payload
+    /// - [`Network`] on connection failure
+    /// - [`Json`] if the response cannot be deserialized
+    ///
+    /// [`LocalApi`]: ZoteroApiError::LocalApi
+    /// [`Network`]: ZoteroApiError::Network
+    /// [`Json`]: ZoteroApiError::Json
+    #[inline]
     pub async fn create_items(
         &self,
         items: &[serde_json::Value],
@@ -262,15 +309,20 @@ impl ZoteroClient {
 
     /// Batch-updates multiple items.
     ///
-    /// Delegates to [`create_items`](ZoteroClient::create_items) — Zotero's
+    /// Delegates to [`create_items`](ZoteroClient::create_items). Zotero's
     /// `POST /items` endpoint handles both creates and updates based on whether
     /// each item has a `key`.
-    #[inline]
+    ///
     /// # Errors
     ///
-    /// Returns [`ZoteroApiError::LocalApi`] if Zotero rejects the batch
-    /// payload, [`ZoteroApiError::Network`] on connection failure, or
-    /// [`ZoteroApiError::Json`] if the response cannot be deserialized.
+    /// - [`LocalApi`] if Zotero rejects the batch payload
+    /// - [`Network`] on connection failure
+    /// - [`Json`] if the response cannot be deserialized
+    ///
+    /// [`LocalApi`]: ZoteroApiError::LocalApi
+    /// [`Network`]: ZoteroApiError::Network
+    /// [`Json`]: ZoteroApiError::Json
+    #[inline]
     pub async fn update_items(
         &self,
         items: &[serde_json::Value],
@@ -279,11 +331,15 @@ impl ZoteroClient {
     }
 
     /// Batch-deletes multiple items by key.
-    #[inline]
+    ///
     /// # Errors
     ///
-    /// Returns [`ZoteroApiError::LocalApi`] if Zotero rejects the deletion
-    /// request, or [`ZoteroApiError::Network`] on connection failure.
+    /// - [`LocalApi`] if Zotero rejects the deletion request
+    /// - [`Network`] on connection failure
+    ///
+    /// [`LocalApi`]: ZoteroApiError::LocalApi
+    /// [`Network`]: ZoteroApiError::Network
+    #[inline]
     pub async fn delete_items<K: AsRef<str>, V: Into<u64>>(
         &self,
         keys: &[K],
@@ -293,11 +349,15 @@ impl ZoteroClient {
     }
 
     /// Returns the local file view URL for an attachment [`ZoteroItem`].
-    #[inline]
+    ///
     /// # Errors
     ///
-    /// Returns [`ZoteroApiError::LocalApi`] if Zotero returns a non-2xx status,
-    /// or [`ZoteroApiError::Network`] on connection failure.
+    /// - [`LocalApi`] if Zotero returns a non-2xx status
+    /// - [`Network`] on connection failure
+    ///
+    /// [`LocalApi`]: ZoteroApiError::LocalApi
+    /// [`Network`]: ZoteroApiError::Network
+    #[inline]
     pub async fn get_item_file_view_url<K: AsRef<str>>(
         &self,
         key: K,
@@ -314,12 +374,17 @@ impl ZoteroClient {
     /// Returns Zotero's indexed full-text content for an item.
     ///
     /// Returns an empty string if the item has no indexed content.
-    #[inline]
+    ///
     /// # Errors
     ///
-    /// Returns [`ZoteroApiError::LocalApi`] if Zotero returns a non-2xx status,
-    /// [`ZoteroApiError::Network`] on connection failure, or
-    /// [`ZoteroApiError::Json`] if the response cannot be deserialized.
+    /// - [`LocalApi`] if Zotero returns a non-2xx status
+    /// - [`Network`] on connection failure
+    /// - [`Json`] if the response cannot be deserialized
+    ///
+    /// [`LocalApi`]: ZoteroApiError::LocalApi
+    /// [`Network`]: ZoteroApiError::Network
+    /// [`Json`]: ZoteroApiError::Json
+    #[inline]
     pub async fn get_item_fulltext<K: AsRef<str>>(
         &self,
         item_key: K,
@@ -345,9 +410,13 @@ impl ZoteroClient {
     #[inline]
     /// # Errors
     ///
-    /// Returns [`ZoteroApiError::LocalApi`] if Zotero rejects the request,
-    /// [`ZoteroApiError::Network`] on connection failure, or
-    /// [`ZoteroApiError::Json`] if the response cannot be deserialized.
+    /// - [`LocalApi`] if Zotero rejects the request
+    /// - [`Network`] on connection failure
+    /// - [`Json`] if the response cannot be deserialized
+    ///
+    /// [`LocalApi`]: ZoteroApiError::LocalApi
+    /// [`Network`]: ZoteroApiError::Network
+    /// [`Json`]: ZoteroApiError::Json
     pub async fn attach_file_link<K: AsRef<str>>(
         &self,
         parent_item_key: K,
@@ -374,26 +443,32 @@ impl ZoteroClient {
     ///
     /// # Upload protocol
     ///
-    /// 1. **Metadata record** — `POST /items` creates an attachment item with
+    /// 1. **Metadata record.** `POST /items` creates an attachment item with
     ///    `linkMode` set to [`LinkMode::ImportedFile`], the filename, content
     ///    type, and optional `parentItem`.
-    /// 2. **Upload ticket** — `POST /items/{key}/file` sends the MD5 hash,
+    /// 2. **Upload ticket.** `POST /items/{key}/file` sends the MD5 hash,
     ///    filename, filesize, and mtime. If the server responds with
     ///    `{"exists": true}`, the file already matches and upload is
     ///    **skipped**. Otherwise it returns a signed upload URL and an
     ///    `uploadKey`.
-    /// 3. **Raw bytes** — `POST` the file bytes to the signed URL. On 201
+    /// 3. **Raw bytes.** `POST` the file bytes to the signed URL. On 201
     ///    Created, finalize with `POST /items/{key}/file` passing the
     ///    `uploadKey`.
     #[inline]
     /// # Errors
     ///
-    /// Returns [`ZoteroApiError::InputRejected`] if the path has no valid
-    /// UTF-8 filename, [`ZoteroApiError::Io`] if reading the local file fails,
-    /// [`ZoteroApiError::LocalApi`] if Zotero rejects any phase of the upload
-    /// (metadata, ticket, or finalization), [`ZoteroApiError::Network`] on
-    /// connection failure, or [`ZoteroApiError::Json`] if a response cannot be
-    /// deserialized.
+    /// - [`InputRejected`] if the path has no valid UTF-8 filename
+    /// - [`Io`] if reading the local file fails
+    /// - [`LocalApi`] if Zotero rejects any phase of the upload (metadata,
+    ///   ticket, or finalization)
+    /// - [`Network`] on connection failure
+    /// - [`Json`] if a response cannot be deserialized
+    ///
+    /// [`InputRejected`]: ZoteroApiError::InputRejected
+    /// [`Io`]: ZoteroApiError::Io
+    /// [`LocalApi`]: ZoteroApiError::LocalApi
+    /// [`Network`]: ZoteroApiError::Network
+    /// [`Json`]: ZoteroApiError::Json
     pub async fn import_pdf_file<K: AsRef<str>>(
         &self,
         parent_item_key: Option<K>,
