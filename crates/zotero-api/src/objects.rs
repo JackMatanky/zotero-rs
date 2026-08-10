@@ -22,7 +22,13 @@ use crate::{
     types::{CollectionParent, CreatorType, ItemType, LinkMode, TagOrigin},
 };
 
-/// Response payload returned by batch create/update operations.
+/// Response returned by batch create and update operations.
+///
+/// Each field is a JSON value mapping payload indices or item keys to their
+/// results. [`successful`](Self::successful) contains keys for items that were
+/// created or updated, [`unchanged`](Self::unchanged) lists keys of items
+/// whose data matched the existing version, and
+/// [`failed`](Self::failed) maps keys to error details.
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq, Default)]
 pub struct BatchWriteResponse {
     /// Successful item keys mapped by payload index or temporary key.
@@ -36,10 +42,12 @@ pub struct BatchWriteResponse {
     pub failed: serde_json::Value,
 }
 
-/// Zotero item creation payload, used by
-/// [`crate::client::ZoteroClient::create_item_from_metadata`] and (when the
-/// `metadata` feature is enabled) built by `crate::metadata::resolve_metadata`
-/// from a resolved DOI, arXiv ID, or ISBN lookup.
+/// Payload for creating a new Zotero item.
+///
+/// Use directly or build via [`crate::metadata::resolve_metadata`] (behind the
+/// `metadata` feature) to auto-populate fields from a DOI, arXiv ID, or ISBN.
+/// Pass to [`ZoteroClient::create_item_from_metadata`](crate::ZoteroClient::create_item_from_metadata)
+/// to persist.
 #[derive(Clone, Debug, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ItemDraft {
@@ -73,36 +81,36 @@ pub struct ItemDraft {
     pub collections: Vec<CollectionKey>,
 }
 
-/// Zotero library descriptor in API responses.
+/// Library descriptor embedded in item and collection responses.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct LibraryInfo {
-    /// Library ID.
+    /// Numeric library identifier.
     #[serde(default)]
     pub id: u64,
-    /// Library type (`user` or `group`).
+    /// Library type: `"user"` or `"group"`.
     #[serde(rename = "type", default)]
     pub type_: String,
-    /// Library name (for group libraries).
+    /// Group library name, absent for personal libraries.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
 }
 
-/// Item links envelope in Zotero API responses.
+/// HATEOAS link objects for an item.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct ItemLinks {
-    /// Self link URL (`self`).
+    /// API endpoint for this item (`self`).
     #[serde(rename = "self", default, skip_serializing_if = "Option::is_none")]
     pub self_link: Option<serde_json::Value>,
-    /// Alternate web link URL (`alternate`).
+    /// Alternate web view URL (`alternate`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub alternate: Option<serde_json::Value>,
-    /// Enclosure link object for attachments (`enclosure`).
+    /// Enclosure link for attachment downloads (`enclosure`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub enclosure: Option<serde_json::Value>,
 }
 
 impl ItemLinks {
-    /// Lookup a link object by name.
+    /// Returns the link object for `"self"`, `"alternate"`, or `"enclosure"`.
     #[must_use]
     #[inline]
     pub fn get(&self, key: &str) -> Option<&serde_json::Value> {
@@ -114,7 +122,7 @@ impl ItemLinks {
         }
     }
 
-    /// Borrows the `href` URL string of the named link, if present.
+    /// Returns the `href` URL string of the named link, if present.
     #[must_use]
     #[inline]
     pub fn href(&self, key: &str) -> Option<&str> {
@@ -122,7 +130,7 @@ impl ItemLinks {
     }
 }
 
-/// Metadata counter envelope in Zotero API responses.
+/// Summary metadata counters for an item.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct ItemMeta {
@@ -135,25 +143,39 @@ pub struct ItemMeta {
 }
 
 /// A single Zotero library item as returned by the Local API.
+///
+/// Wraps the item's [`key`](Self::key) and [`version`](Self::version) envelope
+/// around its [`data`](Self::data) payload.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ZoteroItem {
+    /// Unique 8-character item key.
     pub key: ItemKey,
+    /// Item version for optimistic concurrency.
     pub version: LibraryVersion,
     #[serde(default)]
     pub library: Option<LibraryInfo>,
-    /// HATEOAS API link objects.
+    /// HATEOAS link objects.
     #[serde(default)]
     pub links: Option<ItemLinks>,
-    /// Item metadata containing creator summary and child counts.
+    /// Summary metadata: child and collection counts.
     #[serde(default)]
     pub meta: Option<ItemMeta>,
+    /// Bibliographic, attachment, note, and annotation fields.
     pub data: ZoteroItemData,
 }
 
-/// Bibliographic, attachment, note, and annotation fields for a Zotero item.
+/// Core data payload for a Zotero item.
+///
+/// Contains the standard bibliographic fields ([`key`](Self::key),
+/// [`item_type`](Self::item_type), [`title`](Self::title),
+/// [`creators`](Self::creators), [`tags`](Self::tags)) plus item-type-specific
+/// fields captured in [`extra_fields`](Self::extra_fields). Access any field
+/// generically via [`get_str`](Self::get_str) or
+/// [`set_field`](Self::set_field).
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct ZoteroItemData {
+    /// Unique 8-character item key.
     pub key: ItemKey,
     #[serde(default)]
     pub version: LibraryVersion,
@@ -224,14 +246,18 @@ pub struct ZoteroItemData {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub path: Option<String>,
 
-    /// Dynamic catch-all for item-type specific fields.
+    /// Catch-all for item-type-specific fields not covered above.
     #[serde(flatten)]
     pub extra_fields: std::collections::HashMap<String, serde_json::Value>,
 }
 
 impl ZoteroItemData {
-    /// Returns a string reference to a core field or dynamic extra field if
-    /// present.
+    /// Returns a string reference to a core field or dynamic extra field.
+    ///
+    /// Recognizes `"key"`, `"itemType"`, `"title"`, `"dateAdded"`, and
+    /// `"dateModified"` as built-in fields. Anything else is looked up in
+    /// [`extra_fields`](Self::extra_fields). Returns `None` if the field is
+    /// absent or not string-valued.
     pub fn get_str(&self, field: &str) -> Option<&str> {
         match field {
             "key" => Some(self.key.as_str()),
@@ -243,12 +269,13 @@ impl ZoteroItemData {
         }
     }
 
-    /// Alias for [`get_str`].
+    /// Alias for [`get_str`](Self::get_str).
     pub fn get_field(&self, field: &str) -> Option<&str> {
         self.get_str(field)
     }
 
-    /// Dynamic field setter.
+    /// Inserts or overwrites a dynamic field in
+    /// [`extra_fields`](Self::extra_fields).
     pub fn set_field<K: Into<String>, V: Into<serde_json::Value>>(
         &mut self,
         key: K,
@@ -257,7 +284,10 @@ impl ZoteroItemData {
         self.extra_fields.insert(key.into(), value.into());
     }
 
-    /// Attachment storage mode (e.g. `imported_file`, `linked_file`).
+    /// Attachment storage mode from the `"linkMode"` extra field.
+    ///
+    /// Returns `None` if the field is absent or the value is not a recognized
+    /// [`LinkMode`] variant.
     pub fn link_mode(&self) -> Option<LinkMode> {
         self.extra_fields
             .get("linkMode")
@@ -283,14 +313,16 @@ pub struct ZoteroCreator {
 /// A tag attached to an item.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ZoteroTag {
+    /// Tag name.
     pub tag: TagName,
-    /// Tag origin: user-created vs. automatically assigned on import.
+    /// Whether the tag was user-created or auto-assigned on import.
     #[serde(rename = "type", default)]
     pub origin: TagOrigin,
 }
 /// A Zotero collection as returned by the Local API.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ZoteroCollection {
+    /// Unique 8-character collection key.
     pub key: CollectionKey,
     pub(crate) version: LibraryVersion,
     pub(crate) data: ZoteroCollectionData,
@@ -300,8 +332,9 @@ pub struct ZoteroCollection {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct ZoteroCollectionData {
     pub(crate) key: CollectionKey,
+    /// Human-readable collection name.
     pub(crate) name: String,
-    /// Parent collection state.
+    /// Parent collection state: top-level or a reference to a parent key.
     #[serde(rename = "parentCollection", default)]
     pub(crate) parent_collection: CollectionParent,
 }
@@ -309,9 +342,13 @@ pub(crate) struct ZoteroCollectionData {
 /// Result of probing the Zotero Local API for availability.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LocalApiStatus {
+    /// Whether the Local API is reachable.
     pub online: bool,
+    /// Base URL of the probed endpoint.
     pub url: String,
+    /// Zotero data version string, if the server responded.
     pub version: Option<String>,
+    /// Error message if the probe failed.
     pub error: Option<String>,
 }
 
