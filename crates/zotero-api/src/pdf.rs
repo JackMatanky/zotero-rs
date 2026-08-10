@@ -57,6 +57,19 @@ pub fn extract_pdf_pages(
     page_numbers: Option<&[usize]>,
     max_pdf_bytes: u64,
 ) -> Result<String, ZoteroApiError> {
+    validate_pdf_file(file_path, max_pdf_bytes)?;
+    let full_text = pdf_extract::extract_text(file_path)
+        .map_err(|e| ZoteroApiError::PdfExtract(e.to_string()))?;
+
+    Ok(filter_pages(&full_text, page_numbers))
+}
+
+/// Rejects `file_path` with [`ZoteroApiError::NotFound`] if it does not
+/// exist, or [`ZoteroApiError::InputRejected`] if it exceeds `max_pdf_bytes`.
+fn validate_pdf_file(
+    file_path: &Path,
+    max_pdf_bytes: u64,
+) -> Result<(), ZoteroApiError> {
     if !file_path.exists() {
         return Err(ZoteroApiError::NotFound(format!(
             "PDF file not found: {}",
@@ -70,10 +83,7 @@ pub fn extract_pdf_pages(
             file_path.display()
         )));
     }
-    let full_text = pdf_extract::extract_text(file_path)
-        .map_err(|e| ZoteroApiError::PdfExtract(e.to_string()))?;
-
-    Ok(filter_pages(&full_text, page_numbers))
+    Ok(())
 }
 
 /// Filters form-feed-delimited `full_text` down to `page_numbers` (1-based).
@@ -131,19 +141,7 @@ pub fn extract_pdf_outline(
     file_path: &Path,
     max_pdf_bytes: u64,
 ) -> Result<Vec<PdfOutlineEntry>, ZoteroApiError> {
-    if !file_path.exists() {
-        return Err(ZoteroApiError::NotFound(format!(
-            "PDF file not found: {}",
-            file_path.display()
-        )));
-    }
-    let len = std::fs::metadata(file_path)?.len();
-    if len > max_pdf_bytes {
-        return Err(ZoteroApiError::InputRejected(format!(
-            "PDF file {} exceeds {max_pdf_bytes} bytes",
-            file_path.display()
-        )));
-    }
+    validate_pdf_file(file_path, max_pdf_bytes)?;
     let doc = lopdf::Document::load(file_path)
         .map_err(|e| ZoteroApiError::PdfExtract(e.to_string()))?;
     // NOTE: any get_toc() failure → empty outline; load already validated the

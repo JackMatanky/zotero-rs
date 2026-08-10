@@ -253,18 +253,7 @@ async fn resolve_arxiv(
     );
     let body = fetch_json(http, &url).await?;
     let title = str_at(&body, &["title"]).unwrap_or_default().to_owned();
-    let creators = body
-        .get("authors")
-        .and_then(|v| v.as_array())
-        .into_iter()
-        .flatten()
-        .map(|a| ZoteroCreator {
-            creator_type: Some(CreatorType::Author),
-            first_name: None,
-            last_name: None,
-            name: Some(str_at(a, &["name"]).unwrap_or_default().to_owned()),
-        })
-        .collect();
+    let creators = named_creators(&body);
     let doi = str_at(&body, &["externalIds", "DOI"]);
     Ok(ItemDraft {
         item_type: if doi.is_some() {
@@ -307,18 +296,7 @@ async fn resolve_isbn(
         )));
     };
     let title = str_at(record, &["title"]).unwrap_or_default().to_owned();
-    let creators = record
-        .get("authors")
-        .and_then(|v| v.as_array())
-        .into_iter()
-        .flatten()
-        .map(|a| ZoteroCreator {
-            creator_type: Some(CreatorType::Author),
-            first_name: None,
-            last_name: None,
-            name: Some(str_at(a, &["name"]).unwrap_or_default().to_owned()),
-        })
-        .collect();
+    let creators = named_creators(record);
     let publisher = str_at(record, &["publishers", "0", "name"])
         .unwrap_or_default()
         .to_owned();
@@ -332,6 +310,25 @@ async fn resolve_isbn(
         url: str_at(record, &["url"]).unwrap_or_default().to_owned(),
         ..ItemDraft::default()
     })
+}
+
+/// Extracts name-only `ZoteroCreator`s from `container`'s `authors` array.
+///
+/// Used by APIs that report a single display name per author rather than
+/// separate given/family names (Semantic Scholar, Open Library).
+fn named_creators(container: &serde_json::Value) -> Vec<ZoteroCreator> {
+    container
+        .get("authors")
+        .and_then(|v| v.as_array())
+        .into_iter()
+        .flatten()
+        .map(|a| ZoteroCreator {
+            creator_type: Some(CreatorType::Author),
+            first_name: None,
+            last_name: None,
+            name: Some(str_at(a, &["name"]).unwrap_or_default().to_owned()),
+        })
+        .collect()
 }
 
 #[cfg(test)]
