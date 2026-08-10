@@ -126,6 +126,34 @@ pub struct PaginationInfo {
     pub has_more: bool,
 }
 
+impl PaginationInfo {
+    /// Builds pagination metadata for a page fetched at `offset`/`limit`.
+    ///
+    /// `total` is `server_total` when known, else estimated as
+    /// `offset + returned`. `offset` is reported as requested, even past
+    /// `total` — Zotero's `start` parameter is just the requested index, not
+    /// reinterpreted by the server, so callers that paginate past the end see
+    /// their own offset echoed back with zero items and `has_more: false`.
+    pub(crate) fn from_page(
+        offset: usize,
+        limit: usize,
+        returned: usize,
+        server_total: Option<usize>,
+    ) -> Self {
+        let total =
+            server_total.unwrap_or_else(|| offset.saturating_add(returned));
+        let has_more = server_total.map_or(returned == limit, |exact| {
+            offset.saturating_add(returned) < exact
+        });
+        Self {
+            limit,
+            offset,
+            total,
+            has_more,
+        }
+    }
+}
+
 /// Paginated result set containing one page of items and their
 /// [`PaginationInfo`].
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -265,20 +293,11 @@ fn finish_page(
     offset: usize,
     limit: usize,
 ) -> SearchPage<ZoteroItem> {
-    let returned = items.len();
-    let total = server_total.unwrap_or_else(|| offset.saturating_add(returned));
-    let has_more = server_total.map_or(returned == limit, |exact| {
-        offset.saturating_add(returned) < exact
-    });
-
+    let pagination =
+        PaginationInfo::from_page(offset, limit, items.len(), server_total);
     SearchPage {
         items,
-        pagination: PaginationInfo {
-            limit,
-            offset,
-            total,
-            has_more,
-        },
+        pagination,
     }
 }
 

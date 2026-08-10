@@ -173,7 +173,12 @@ async fn fetch_json(
     Ok(resp.json().await?)
 }
 
-fn str_at<'a>(value: &'a serde_json::Value, path: &[&str]) -> Option<&'a str> {
+/// Walks `path` through nested JSON objects/arrays, treating each segment as
+/// an array index when it parses as `usize` and an object key otherwise.
+fn value_at<'a>(
+    value: &'a serde_json::Value,
+    path: &[&str],
+) -> Option<&'a serde_json::Value> {
     let mut current = value;
     for segment in path {
         current = match segment.parse::<usize>() {
@@ -181,18 +186,15 @@ fn str_at<'a>(value: &'a serde_json::Value, path: &[&str]) -> Option<&'a str> {
             Err(_) => current.get(segment)?,
         };
     }
-    current.as_str()
+    Some(current)
+}
+
+fn str_at<'a>(value: &'a serde_json::Value, path: &[&str]) -> Option<&'a str> {
+    value_at(value, path)?.as_str()
 }
 
 fn i64_at(value: &serde_json::Value, path: &[&str]) -> Option<i64> {
-    let mut current = value;
-    for segment in path {
-        current = match segment.parse::<usize>() {
-            Ok(index) => current.get(index)?,
-            Err(_) => current.get(segment)?,
-        };
-    }
-    current.as_i64()
+    value_at(value, path)?.as_i64()
 }
 
 async fn resolve_doi(

@@ -99,8 +99,12 @@ impl ZoteroClient {
         };
         let page_url = crate::client::add_pagination(&base, offset, limit);
         let page = self.get_items_with_total(&page_url).await?;
-        let pagination =
-            coverage_pagination(offset, limit, page.items.len(), page.total);
+        let pagination = PaginationInfo::from_page(
+            offset,
+            limit,
+            page.items.len(),
+            page.total,
+        );
 
         let mut children_by_idx = Vec::with_capacity(page.items.len());
         for item in &page.items {
@@ -135,25 +139,6 @@ fn coverage_flags(
         has_pdf,
         has_doi,
         has_notes,
-    }
-}
-
-fn coverage_pagination(
-    offset: usize,
-    limit: usize,
-    returned: usize,
-    server_total: Option<usize>,
-) -> PaginationInfo {
-    let total = server_total.unwrap_or_else(|| offset.saturating_add(returned));
-    let page_offset =
-        server_total.map_or(offset, |known_total| offset.min(known_total));
-    PaginationInfo {
-        limit,
-        offset: page_offset,
-        total,
-        has_more: server_total.map_or(returned == limit, |known_total| {
-            page_offset.saturating_add(returned) < known_total
-        }),
     }
 }
 
