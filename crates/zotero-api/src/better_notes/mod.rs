@@ -1,9 +1,8 @@
-//! Bridge to the Better Notes Zotero plugin HTTP companion API.
+//! Integration with the Better Notes Zotero plugin.
 //!
-//! Provides an async HTTP client and data models for communicating with the
-//! Better Notes plugin running inside Zotero.
-//!
-//! Re-exports [`BetterNotesClient`] and primary data types.
+//! This module exposes [`BetterNotesClient`], an async client for the plugin's
+//! HTTP companion endpoint, plus small model types for note export and template
+//! execution.
 
 mod client;
 mod models;

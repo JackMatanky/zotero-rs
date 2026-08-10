@@ -12,7 +12,32 @@ use crate::{
     keys::ItemKey,
 };
 
-/// Async HTTP client for the Better Notes companion API.
+/// Async HTTP client for the Better Notes companion endpoint.
+///
+/// [`BetterNotesClient`] talks to the local HTTP bridge exposed by the Better
+/// Notes Zotero plugin. The default endpoint is
+/// `http://127.0.0.1:23119/better-notes`.
+///
+/// It can:
+///
+/// - export Zotero notes as Markdown or HTML
+/// - convert Markdown into Zotero HTML notes
+/// - run named Better Notes templates
+/// - read note relations and note trees
+///
+/// # Examples
+///
+/// ```no_run
+/// use zotero_api::better_notes::{BetterNotesClient, NoteExportFormat};
+///
+/// # async fn demo() -> Result<(), zotero_api::ZoteroApiError> {
+/// let client = BetterNotesClient::default();
+/// let markdown =
+///     client.export("ABCD1234", Some(NoteExportFormat::Markdown)).await?;
+/// # let _ = markdown;
+/// # Ok(())
+/// # }
+/// ```
 #[derive(Clone, Debug)]
 pub struct BetterNotesClient {
     http: reqwest::Client,
@@ -51,10 +76,19 @@ impl BetterNotesClient {
 
     /// Exports an existing Zotero note as Markdown or HTML.
     ///
+    /// The optional `format` controls the returned text encoding. Use
+    /// [`NoteExportFormat::Markdown`] for Markdown or
+    /// [`NoteExportFormat::Html`] for rendered HTML. `None` uses
+    /// [`NoteExportFormat::Markdown`].
+    ///
     /// # Errors
     ///
-    /// Returns [`ZoteroApiError::BetterNotes`] if the bridge responds with a
-    /// non-2xx status, or [`ZoteroApiError`] if the request fails.
+    /// - [`BetterNotes`] if the bridge responds with a non-2xx status
+    /// - [`Network`] if the HTTP request fails or the response body cannot be
+    ///   decoded
+    ///
+    /// [`BetterNotes`]: ZoteroApiError::BetterNotes
+    /// [`Network`]: ZoteroApiError::Network
     #[inline]
     pub async fn export<K: AsRef<str>>(
         &self,
@@ -71,13 +105,21 @@ impl BetterNotesClient {
         Ok(res.content)
     }
 
-    /// Converts Markdown content into a Zotero HTML note attached to
-    /// `parent_key`.
+    /// Converts Markdown content into a Zotero HTML note.
+    ///
+    /// The Better Notes bridge renders `markdown` to the HTML format used by
+    /// Zotero notes. When `parent_key` is provided, the created note is
+    /// attached to that parent item. The returned [`ItemKey`] identifies
+    /// the new note.
     ///
     /// # Errors
     ///
-    /// Returns [`ZoteroApiError::BetterNotes`] if the bridge responds with a
-    /// non-2xx status, or [`ZoteroApiError`] if the request fails.
+    /// - [`BetterNotes`] if the bridge responds with a non-2xx status
+    /// - [`Network`] if the HTTP request fails or the response body cannot be
+    ///   decoded
+    ///
+    /// [`BetterNotes`]: ZoteroApiError::BetterNotes
+    /// [`Network`]: ZoteroApiError::Network
     #[inline]
     pub async fn convert_from_markdown<K: AsRef<str>>(
         &self,
@@ -95,10 +137,17 @@ impl BetterNotesClient {
 
     /// Executes a named Better Notes template against `item_key`.
     ///
+    /// The bridge runs the [`TemplateName`] in Zotero's Better Notes context
+    /// and returns the rendered template output as a string.
+    ///
     /// # Errors
     ///
-    /// Returns [`ZoteroApiError::BetterNotes`] if the bridge responds with a
-    /// non-2xx status, or [`ZoteroApiError`] if the request fails.
+    /// - [`BetterNotes`] if the bridge responds with a non-2xx status
+    /// - [`Network`] if the HTTP request fails or the response body cannot be
+    ///   decoded
+    ///
+    /// [`BetterNotes`]: ZoteroApiError::BetterNotes
+    /// [`Network`]: ZoteroApiError::Network
     #[inline]
     pub async fn run_template<K: AsRef<str>>(
         &self,
@@ -118,8 +167,12 @@ impl BetterNotesClient {
     ///
     /// # Errors
     ///
-    /// Returns [`ZoteroApiError::BetterNotes`] if the bridge responds with a
-    /// non-2xx status, or [`ZoteroApiError`] if the request fails.
+    /// - [`BetterNotes`] if the bridge responds with a non-2xx status
+    /// - [`Network`] if the HTTP request fails or the response body cannot be
+    ///   decoded
+    ///
+    /// [`BetterNotes`]: ZoteroApiError::BetterNotes
+    /// [`Network`]: ZoteroApiError::Network
     #[inline]
     pub async fn get_relations<K: AsRef<str>>(
         &self,
@@ -137,8 +190,12 @@ impl BetterNotesClient {
     ///
     /// # Errors
     ///
-    /// Returns [`ZoteroApiError::BetterNotes`] if the bridge responds with a
-    /// non-2xx status, or [`ZoteroApiError`] if the request fails.
+    /// - [`BetterNotes`] if the bridge responds with a non-2xx status
+    /// - [`Network`] if the HTTP request fails or the response body cannot be
+    ///   decoded
+    ///
+    /// [`BetterNotes`]: ZoteroApiError::BetterNotes
+    /// [`Network`]: ZoteroApiError::Network
     #[inline]
     pub async fn get_tree<K: AsRef<str>>(
         &self,
@@ -152,6 +209,16 @@ impl BetterNotesClient {
         Ok(res.tree)
     }
 
+    /// Sends a JSON POST request to a Better Notes bridge endpoint.
+    ///
+    /// # Errors
+    ///
+    /// - [`BetterNotes`] if the bridge responds with a non-2xx status
+    /// - [`Network`] if the HTTP request fails or the response body cannot be
+    ///   decoded
+    ///
+    /// [`BetterNotes`]: ZoteroApiError::BetterNotes
+    /// [`Network`]: ZoteroApiError::Network
     async fn post_json<P: Serialize, R: serde::de::DeserializeOwned>(
         &self,
         endpoint: &str,
