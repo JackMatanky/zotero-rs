@@ -11,26 +11,35 @@ use crate::{
     types::ItemType,
 };
 
-/// A single item linked to another via a `dc:relation` URI.
+/// A minimal reference to a related item, resolved from a `dc:relation` URI.
+///
+/// Each [`RelatedItem`] corresponds to one URI in an item's `relations` map.
+/// The title and item type are fetched from the related item's data during
+/// resolution in [`ZoteroClient::get_related_items`].
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct RelatedItem {
     /// Item key of the related item.
     pub key: ItemKey,
-    /// Optional item title.
+    /// Item title, if present.
     pub title: Option<String>,
     /// Item type of the related item.
     pub item_type: ItemType,
 }
 
 impl ZoteroClient {
-    /// Fetches all related items linked to `item_key` via Dublin Core
-    /// `dc:relation` URIs.
-    #[inline]
+    /// Fetches all related items linked to `item_key` via `dc:relation` URIs.
+    ///
+    /// Each URI in the item's `relations` map is resolved by fetching the
+    /// corresponding item. URIs that don't match the Zotero item key format
+    /// (e.g. external URLs) are silently skipped, as are items that return
+    /// 404.
+    ///
     /// # Errors
     ///
     /// Returns [`ZoteroApiError::NotFound`] if `item_key` does not exist, or
-    /// [`ZoteroApiError::LocalApi`]/[`ZoteroApiError::Network`] if the request
-    /// fails.
+    /// [`ZoteroApiError::LocalApi`]/[`ZoteroApiError::Network`] on request
+    /// failure.
+    #[inline]
     pub async fn get_related_items<K: AsRef<str>>(
         &self,
         item_key: K,
@@ -54,15 +63,20 @@ impl ZoteroClient {
         Ok(related)
     }
 
-    /// Links item `a` and item `b` bidirectionally by updating each item's
+    /// Links item `a` and item `b` by adding each item's URI to the other's
     /// `dc:relation` map.
-    #[inline]
+    ///
+    /// The two PATCH requests are issued sequentially. If the second fails, the
+    /// first has already succeeded — resulting in a one-directional relation.
+    /// Callers should retry or reconcile on error.
+    ///
     /// # Errors
     ///
     /// Returns [`ZoteroApiError::InputRejected`] if `a` and `b` are the same
-    /// item key, [`ZoteroApiError::NotFound`] if either item does not exist, or
+    /// key, [`ZoteroApiError::NotFound`] if either item does not exist, or
     /// [`ZoteroApiError::LocalApi`]/[`ZoteroApiError::Network`] if Zotero
-    /// rejects either item update.
+    /// rejects either update.
+    #[inline]
     pub async fn add_item_relation<K: AsRef<str>, V: AsRef<str>>(
         &self,
         a: K,
@@ -108,14 +122,17 @@ impl ZoteroClient {
         Ok(())
     }
 
-    /// Unlinks item `a` and item `b` bidirectionally by removing each item's
-    /// URI.
-    #[inline]
+    /// Removes the relation between item `a` and item `b`.
+    ///
+    /// Each item's `dc:relation` URI pointing to the other is removed. Like
+    /// [`ZoteroClient::add_item_relation`], the two updates are non-atomic.
+    ///
     /// # Errors
     ///
     /// Returns [`ZoteroApiError::NotFound`] if either item does not exist, or
     /// [`ZoteroApiError::LocalApi`]/[`ZoteroApiError::Network`] if Zotero
-    /// rejects either item update.
+    /// rejects either update.
+    #[inline]
     pub async fn remove_item_relation<K: AsRef<str>, V: AsRef<str>>(
         &self,
         a: K,
@@ -155,7 +172,10 @@ impl ZoteroClient {
     }
 }
 
-/// Reads the `dc:relation` URI values from an item's `relations` map.
+/// Extracts `dc:relation` URIs from an item's `relations` JSON value.
+///
+/// Handles both single-string and array forms. Returns an empty vec if the
+/// key is missing or the value type is unexpected.
 pub(crate) fn parse_relation_keys(
     relations: &serde_json::Value,
 ) -> Vec<RelationUri> {
@@ -172,8 +192,7 @@ pub(crate) fn parse_relation_keys(
     }
 }
 
-/// Computes the item's `relations` map after adding and removing `dc:relation`
-/// URIs.
+/// Returns a new `relations` JSON value with the given URIs added and removed.
 pub(crate) fn apply_relations(
     current: &serde_json::Value,
     add: &[RelationUri],
