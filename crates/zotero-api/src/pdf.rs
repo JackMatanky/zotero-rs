@@ -164,7 +164,7 @@ pub fn extract_pdf_outline(
 /// Outline entries are returned as a flat list. The `level` field preserves the
 /// original nesting depth, with `1` for top-level entries and larger values for
 /// nested sections.
-#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize)]
 pub struct PdfOutlineEntry {
     /// 1-based nesting level of the outline entry.
     pub(crate) level: usize,

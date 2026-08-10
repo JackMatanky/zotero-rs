@@ -14,7 +14,7 @@ use crate::{
 /// Zotero setting keys identify individual preferences or extension settings.
 /// The `value` field is JSON-typed because settings can be strings, booleans,
 /// numbers, arrays, or objects depending on the key.
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
 pub struct SettingEntry {
     /// Setting key name.
     pub key: String,

@@ -96,7 +96,7 @@ string_newtype!(
 
 /// Content type format for generated bibliography output.
 #[derive(
-    Copy, Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize,
+    Copy, Clone, Debug, Default, Eq, PartialEq, Deserialize, Serialize,
 )]
 #[serde(rename_all = "lowercase")]
 pub enum BibliographyContentType {

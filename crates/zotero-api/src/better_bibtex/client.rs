@@ -54,13 +54,6 @@ pub struct BetterBibtexClient {
     base_url: String,
 }
 
-impl Default for BetterBibtexClient {
-    #[inline]
-    fn default() -> Self {
-        Self::new("http://127.0.0.1:23119/better-bibtex")
-    }
-}
-
 impl BetterBibtexClient {
     /// Creates a new [`BetterBibtexClient`] with the specified base URL.
     ///
@@ -333,6 +326,13 @@ impl BetterBibtexClient {
                 "JSON-RPC returned null result".to_owned(),
             )
         })
+    }
+}
+
+impl Default for BetterBibtexClient {
+    #[inline]
+    fn default() -> Self {
+        Self::new("http://127.0.0.1:23119/better-bibtex")
     }
 }
 

@@ -28,7 +28,7 @@ use crate::{
 /// };
 /// assert_eq!(search.name, "Quantum Papers");
 /// ```
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
 pub struct SavedSearch {
     /// 8-character search key identifier.
     pub key: SearchKey,

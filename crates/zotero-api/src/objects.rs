@@ -30,7 +30,7 @@ use crate::{
 /// created or updated, [`unchanged`](Self::unchanged) lists keys of items whose
 /// data matched the existing version, and [`failed`](Self::failed) maps keys to
 /// error details.
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq, Default)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Deserialize, Serialize)]
 pub struct BatchWriteResponse {
     /// Successful item keys mapped by payload index or temporary key.
     #[serde(default)]
@@ -85,7 +85,7 @@ pub struct ItemDraft {
 }
 
 /// Library descriptor embedded in item and collection responses.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Deserialize, Serialize)]
 pub struct LibraryInfo {
     /// Numeric library identifier.
     #[serde(default)]
@@ -99,7 +99,7 @@ pub struct LibraryInfo {
 }
 
 /// HATEOAS link objects for an item.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Deserialize, Serialize)]
 pub struct ItemLinks {
     /// API endpoint for this item (`self`).
     #[serde(rename = "self", default, skip_serializing_if = "Option::is_none")]
@@ -134,7 +134,7 @@ impl ItemLinks {
 }
 
 /// Summary metadata counters for an item.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ItemMeta {
     /// Number of child items (notes, attachments, annotations).
@@ -149,7 +149,7 @@ pub struct ItemMeta {
 ///
 /// Wraps the item's [`key`](Self::key) and [`version`](Self::version) envelope
 /// around its [`data`](Self::data) payload.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ZoteroItem {
     /// Unique 8-character item key.
     pub key: ItemKey,
@@ -176,7 +176,7 @@ pub struct ZoteroItem {
 /// fields captured in [`extra_fields`](Self::extra_fields). Access any field
 /// generically via [`get_str`](Self::get_str) or
 /// [`set_field`](Self::set_field).
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ZoteroItemData {
     /// Unique 8-character item key.
@@ -297,7 +297,7 @@ impl ZoteroItemData {
 }
 
 /// An author, editor, or other creator credited on an item.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ZoteroCreator {
     /// Creator role (e.g. `"author"`, `"editor"`).
     #[serde(rename = "creatorType")]
@@ -313,7 +313,7 @@ pub struct ZoteroCreator {
 }
 
 /// A tag attached to an item.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ZoteroTag {
     /// Tag name.
     pub tag: TagName,
@@ -323,7 +323,7 @@ pub struct ZoteroTag {
 }
 
 /// A Zotero collection as returned by the Local API.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ZoteroCollection {
     /// Unique 8-character collection key.
     pub key: CollectionKey,
@@ -332,7 +332,7 @@ pub struct ZoteroCollection {
 }
 
 /// Metadata payload for a [`ZoteroCollection`].
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub(crate) struct ZoteroCollectionData {
     pub(crate) key: CollectionKey,
     /// Human-readable collection name.
@@ -343,7 +343,7 @@ pub(crate) struct ZoteroCollectionData {
 }
 
 /// Result of probing the Zotero Local API for availability.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct LocalApiStatus {
     /// Whether the Local API is reachable.
     pub online: bool,

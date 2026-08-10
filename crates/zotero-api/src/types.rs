@@ -209,7 +209,7 @@ open_string_enum! {
 ///     serde_json::from_value(serde_json::json!("ABC123")).unwrap();
 /// assert_eq!(child, CollectionParent::Parent(CollectionKey::from("ABC123")));
 /// ```
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Deserialize, Serialize)]
 #[serde(from = "serde_json::Value", into = "serde_json::Value")]
 pub enum CollectionParent {
     /// Top-level collection with no parent collection.
@@ -259,7 +259,7 @@ impl From<CollectionParent> for serde_json::Value {
 /// assert_eq!(TagOrigin::from(42), TagOrigin::Other(42));
 /// ```
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize,
+    Copy, Clone, Debug, Default, Eq, PartialEq, Deserialize, Serialize,
 )]
 #[serde(from = "u8", into = "u8")]
 pub enum TagOrigin {

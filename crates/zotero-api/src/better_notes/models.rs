@@ -71,14 +71,14 @@ impl NoteExportFormat {
 }
 
 /// Response body returned by the Better Notes note-export endpoint.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub(crate) struct NoteExportResponse {
     /// Exported note content formatted as Markdown or HTML.
     pub(crate) content: String,
 }
 
 /// Response body returned by the Better Notes note-creation endpoint.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub(crate) struct NoteItemResponse {
     /// Item key of the created note.
     #[serde(rename = "itemKey")]
@@ -86,21 +86,21 @@ pub(crate) struct NoteItemResponse {
 }
 
 /// Response body returned by the Better Notes template-run endpoint.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub(crate) struct TemplateResponse {
     /// Rendered template output string.
     pub(crate) result: String,
 }
 
 /// Response body returned by the Better Notes note-relations endpoint.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub(crate) struct RelationsResponse {
     /// Inbound and outbound note relation links.
     pub(crate) relations: NoteRelations,
 }
 
 /// Inbound and outbound note-link relation sets for a Zotero note.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct NoteRelations {
     /// Links from this note to other notes.
     pub(crate) outbound: Vec<NoteRelationLink>,
@@ -109,7 +109,7 @@ pub struct NoteRelations {
 }
 
 /// Single directed Better Notes note-link relation between two notes.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct NoteRelationLink {
     /// Library ID of the source note.
@@ -133,7 +133,7 @@ pub(crate) struct NoteRelationLink {
 }
 
 /// Response body returned by the Better Notes note-tree endpoint.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub(crate) struct NoteTreeResponse {
     /// Hierarchical tree structure of notes as JSON
     /// [`Value`](serde_json::Value).

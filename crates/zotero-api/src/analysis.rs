@@ -44,7 +44,7 @@ pub struct LibraryCoverage {
 ///
 /// Combines one page of [`LibraryCoverage`] data with [`PaginationInfo`] so
 /// callers can display the aggregate metrics and request the next page.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct LibraryCoveragePage {
     pub coverage: LibraryCoverage,
     pub pagination: PaginationInfo,

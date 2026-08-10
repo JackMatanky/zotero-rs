@@ -3,8 +3,8 @@
 
 /// Generates a `String`-backed newtype with standard conversions.
 ///
-/// Generates: `Clone, Debug, Default, Deserialize, Eq, Hash, Ord, PartialEq,
-/// PartialOrd, Serialize`, `#[serde(transparent)]`, `as_str()`, `Display`,
+/// Generates: `Clone, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd,
+/// Deserialize, Serialize`, `#[serde(transparent)]`, `as_str()`, `Display`,
 /// `From<String>`, `From<&str>`, `AsRef<str>`, `PartialEq<str>`,
 /// `PartialEq<&str>`, `PartialEq<$name> for str`.
 ///
@@ -20,12 +20,12 @@ macro_rules! string_newtype {
             Clone,
             Debug,
             Default,
-            Deserialize,
             Eq,
             Hash,
             Ord,
             PartialEq,
             PartialOrd,
+            Deserialize,
             Serialize,
             $($extra,)*
         )]
@@ -109,11 +109,10 @@ macro_rules! string_newtype {
 /// does not name explicitly, so serialization round-trips without dropping
 /// unrecognized values.
 ///
-/// Generates: the enum (with the trailing `Other(String)` variant; do not
-/// list it), `#[derive(Debug, Clone, PartialEq, Eq, Serialize,
-/// Deserialize)]`, `#[serde(from = "String", into = "String")]`, an inherent
-/// `as_str(&self) -> &str`, `From<String>`, `From<&str>`, and `From<$name> for
-/// String`.
+/// Generates: the enum (with the trailing `Other(String)` variant; do not list
+/// it), `#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]`,
+/// `#[serde(from = "String", into = "String")]`, an inherent `as_str(&self) ->
+/// &str`, `From<String>`, `From<&str>`, and `From<$name> for String`.
 ///
 /// Each variant is written as `Variant => "wireValue",` and may carry its own
 /// doc comment. Type-specific inherent methods (e.g. a `Default` impl or an
@@ -130,7 +129,7 @@ macro_rules! open_string_enum {
         }
     ) => {
         $(#[$enum_meta])*
-        #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+        #[derive(Clone, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
         #[serde(from = "String", into = "String")]
         $vis enum $name {
             $(

@@ -118,7 +118,7 @@ pub enum SortOrder {
 ///
 /// Returned alongside each [`SearchPage`] to indicate the requested window
 /// and the total number of matches.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct PaginationInfo {
     pub limit: usize,
     pub offset: usize,
@@ -156,7 +156,7 @@ impl PaginationInfo {
 
 /// Paginated result set containing one page of items and their
 /// [`PaginationInfo`].
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct SearchPage<T> {
     pub items: Vec<T>,
     pub pagination: PaginationInfo,
@@ -283,25 +283,7 @@ impl ZoteroClient {
         }
         Ok(None)
     }
-}
 
-/// Wraps server-fetched items into a [`SearchPage`], estimating the total
-/// from `server_total` or falling back to `offset + items.len()`.
-fn finish_page(
-    items: Vec<ZoteroItem>,
-    server_total: Option<usize>,
-    offset: usize,
-    limit: usize,
-) -> SearchPage<ZoteroItem> {
-    let pagination =
-        PaginationInfo::from_page(offset, limit, items.len(), server_total);
-    SearchPage {
-        items,
-        pagination,
-    }
-}
-
-impl ZoteroClient {
     /// Executes a multi-condition structured search over item fields,
     /// returning a paginated [`SearchPage`].
     ///
@@ -432,23 +414,28 @@ impl ZoteroClient {
     }
 }
 
+/// Wraps server-fetched items into a [`SearchPage`], estimating the total
+/// from `server_total` or falling back to `offset + items.len()`.
+fn finish_page(
+    items: Vec<ZoteroItem>,
+    server_total: Option<usize>,
+    offset: usize,
+    limit: usize,
+) -> SearchPage<ZoteroItem> {
+    let pagination =
+        PaginationInfo::from_page(offset, limit, items.len(), server_total);
+    SearchPage {
+        items,
+        pagination,
+    }
+}
+
 /// Pre-evaluated search condition for efficient client-side matching.
 struct PreparedCondition<'a> {
     field: &'a SearchField,
     operator: &'a SearchOperator,
     value: &'a str,
     value_lc: String,
-}
-
-impl<'a> From<&'a SearchCondition> for PreparedCondition<'a> {
-    fn from(cond: &'a SearchCondition) -> Self {
-        Self {
-            field: &cond.field,
-            operator: &cond.operator,
-            value: cond.value.as_str(),
-            value_lc: cond.value.to_lowercase(),
-        }
-    }
 }
 
 impl PreparedCondition<'_> {
@@ -523,6 +510,17 @@ impl PreparedCondition<'_> {
                     .is_some_and(|s| self.matches_str(s)),
                 _ => false,
             },
+        }
+    }
+}
+
+impl<'a> From<&'a SearchCondition> for PreparedCondition<'a> {
+    fn from(cond: &'a SearchCondition) -> Self {
+        Self {
+            field: &cond.field,
+            operator: &cond.operator,
+            value: cond.value.as_str(),
+            value_lc: cond.value.to_lowercase(),
         }
     }
 }
@@ -606,7 +604,7 @@ fn compare_dates(a: &str, b: &str) -> std::cmp::Ordering {
 /// Leading `year-month-day` numeric components of a date-or-year string,
 /// parsed for ordering comparisons. Missing or non-numeric components sort
 /// as `0`.
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Copy, Clone, Eq, Ord, PartialEq, PartialOrd)]
 struct DateKey(u32, u32, u32);
 
 impl From<&str> for DateKey {

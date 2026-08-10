@@ -37,7 +37,7 @@ use crate::{
 /// assert_eq!(deleted.items, ["I1", "I2"]);
 /// # Ok::<(), serde_json::Error>(())
 /// ```
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq, Default)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Deserialize, Serialize)]
 pub struct DeletedObjectsResponse {
     /// Deleted collection keys.
     #[serde(default)]

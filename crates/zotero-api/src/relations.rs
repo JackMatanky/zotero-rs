@@ -36,14 +36,6 @@ string_newtype!(
 /// Base URI for item relations in the Local API's `/users/0` namespace.
 const ITEM_RELATION_URI_BASE: &str = "http://zotero.org/users/0/items/";
 
-/// Error returned when a [`RelationUri`] does not contain a valid Zotero item
-/// key as its trailing segment.
-///
-/// The URI must end with `/items/` followed by exactly 8 ASCII-alphanumeric
-/// characters (e.g. `http://zotero.org/users/0/items/ABC12345`).
-#[derive(Debug)]
-pub(crate) struct RelationUriError;
-
 impl From<&ItemKey> for RelationUri {
     #[inline]
     fn from(key: &ItemKey) -> Self {
@@ -81,6 +73,14 @@ impl TryFrom<&RelationUri> for ItemKey {
         }
     }
 }
+
+/// Error returned when a [`RelationUri`] does not contain a valid Zotero item
+/// key as its trailing segment.
+///
+/// The URI must end with `/items/` followed by exactly 8 ASCII-alphanumeric
+/// characters (e.g. `http://zotero.org/users/0/items/ABC12345`).
+#[derive(Debug)]
+pub(crate) struct RelationUriError;
 
 impl std::fmt::Display for RelationUriError {
     #[inline]

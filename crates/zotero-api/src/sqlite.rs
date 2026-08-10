@@ -98,7 +98,7 @@ pub(crate) enum HitKind {
 /// Values come from parent Zotero items, not attachment rows. The hit includes
 /// bibliographic metadata such as title, DOI, and creators, plus a short
 /// snippet from the matched indexed full-text words.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct FulltextHit {
     /// Unique key identifying the matched item.
     pub(crate) key: ItemKey,
@@ -121,7 +121,7 @@ pub struct FulltextHit {
 /// The hit kind discriminator distinguishes child notes from PDF annotations.
 /// Notes carry Zotero's stored note body, while annotations can include
 /// annotation text, user comments, page labels, and colors.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct NoteAnnotationHit {
     /// Discriminator identifying whether the hit is a note or annotation.
     pub(crate) kind: HitKind,

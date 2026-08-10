@@ -44,13 +44,6 @@ pub struct BetterNotesClient {
     base_url: String,
 }
 
-impl Default for BetterNotesClient {
-    #[inline]
-    fn default() -> Self {
-        Self::new("http://127.0.0.1:23119/better-notes")
-    }
-}
-
 impl BetterNotesClient {
     /// Creates a new [`BetterNotesClient`] with the specified base URL.
     #[inline]
@@ -237,6 +230,13 @@ impl BetterNotesClient {
 
         let data: R = resp.json().await?;
         Ok(data)
+    }
+}
+
+impl Default for BetterNotesClient {
+    #[inline]
+    fn default() -> Self {
+        Self::new("http://127.0.0.1:23119/better-notes")
     }
 }
 

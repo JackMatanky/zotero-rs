@@ -36,7 +36,7 @@ use crate::{
 /// [`Deref`]: std::ops::Deref
 /// [`total_results`]: ZoteroResponse::total_results
 /// [`last_modified_version`]: ZoteroResponse::last_modified_version
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ZoteroResponse<T> {
     /// Deserialized response body payload.
     pub data: T,
@@ -69,20 +69,13 @@ pub(super) struct ItemsPage {
 ///
 /// Default is [`User(0)`](LibraryTarget::User), which targets the active local
 /// user's library.
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, Eq, Hash, PartialEq, Deserialize, Serialize)]
 #[serde(untagged)]
 pub enum LibraryTarget {
     /// User library with ID (default `User(0)` for active local user).
     User(u64),
     /// Group library with group ID.
     Group(u64),
-}
-
-impl Default for LibraryTarget {
-    #[inline]
-    fn default() -> Self {
-        Self::User(0)
-    }
 }
 
 impl LibraryTarget {
@@ -98,11 +91,18 @@ impl LibraryTarget {
     }
 }
 
+impl Default for LibraryTarget {
+    #[inline]
+    fn default() -> Self {
+        Self::User(0)
+    }
+}
+
 /// Response from `POST /api/local/authorize`.
 ///
 /// Contains a write token for local API authorization and an optional backoff
 /// delay if user interaction is pending.
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LocalAuthResponse {
     /// Generated local API write key / token.
@@ -123,13 +123,6 @@ pub struct ZoteroClient {
     pub(super) api_key: Option<String>,
     pub(super) server_id: Option<String>,
     pub(super) target: LibraryTarget,
-}
-
-impl Default for ZoteroClient {
-    #[inline]
-    fn default() -> Self {
-        Self::new("http://127.0.0.1:23119/api")
-    }
 }
 
 impl ZoteroClient {
@@ -437,6 +430,13 @@ impl ZoteroClient {
             .send_unit()
             .await?;
         Ok(())
+    }
+}
+
+impl Default for ZoteroClient {
+    #[inline]
+    fn default() -> Self {
+        Self::new("http://127.0.0.1:23119/api")
     }
 }
 
