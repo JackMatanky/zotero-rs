@@ -1,9 +1,9 @@
 //! Strongly-typed identifiers for Zotero objects.
 //!
-//! [`ItemKey`] and [`CollectionKey`] are 8-character alphanumeric keys that are
-//! structurally identical but semantically distinct, so the compiler rejects
-//! accidental transposition. [`TagName`] wraps a plain string for the same
-//! reason.
+//! [`ItemKey`], [`CollectionKey`], and [`SearchKey`] are 8-character
+//! alphanumeric keys that are structurally identical but semantically
+//! distinct, so the compiler rejects accidental transposition. [`TagName`]
+//! wraps a plain string for the same reason.
 //!
 //! # Examples
 //!
@@ -29,6 +29,13 @@ string_newtype!(
     "An 8-character alphanumeric key that identifies a Zotero collection \
      within a library. Structurally identical to [`ItemKey`] but type-distinct \
      to prevent accidental transposition.",
+);
+string_newtype!(
+    pub SearchKey,
+    "An 8-character alphanumeric key that identifies a Zotero saved search \
+     within a library. Structurally identical to [`ItemKey`] and \
+     [`CollectionKey`] but type-distinct to prevent accidental \
+     transposition.",
 );
 string_newtype!(
     pub TagName,

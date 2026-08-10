@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     client::{ZoteroClient, ZoteroResponse},
     errors::ZoteroApiError,
+    keys::SearchKey,
     objects::{BatchWriteResponse, ZoteroItem},
     version::LibraryVersion,
 };
@@ -30,7 +31,7 @@ use crate::{
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct SavedSearch {
     /// 8-character search key identifier.
-    pub key: String,
+    pub key: SearchKey,
     /// Library version counter.
     pub version: LibraryVersion,
     /// Human-readable search name.

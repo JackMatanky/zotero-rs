@@ -277,11 +277,7 @@ impl ZoteroClient {
     pub async fn check_status(&self) -> LocalApiStatus {
         match self.get("/items").query("limit", "1").send_raw().await {
             Ok(resp) => {
-                let version = resp
-                    .headers()
-                    .get("zotero-api-version")
-                    .and_then(|v| v.to_str().ok())
-                    .map(str::to_owned);
+                let version = header_value(&resp, "zotero-api-version");
                 let status = resp.status();
                 if status.is_success() {
                     LocalApiStatus {
@@ -643,21 +639,10 @@ impl<'a> ApiRequestBuilder<'a> {
     async fn decode_success<T: DeserializeOwned>(
         resp: reqwest::Response,
     ) -> Result<ZoteroResponse<T>, ZoteroApiError> {
-        let total_results = resp
-            .headers()
-            .get("Total-Results")
-            .and_then(|v| v.to_str().ok())
-            .and_then(|v| v.parse::<usize>().ok());
-        let last_modified_version = resp
-            .headers()
-            .get("Last-Modified-Version")
-            .and_then(|v| v.to_str().ok())
-            .and_then(|v| v.parse::<u64>().ok());
-        let server_id = resp
-            .headers()
-            .get("Zotero-Server-ID")
-            .and_then(|v| v.to_str().ok())
-            .map(str::to_owned);
+        let total_results = header_value(&resp, "Total-Results");
+        let last_modified_version =
+            header_value(&resp, "Last-Modified-Version");
+        let server_id = header_value(&resp, "Zotero-Server-ID");
 
         let data: T = resp.json().await?;
         Ok(ZoteroResponse {
@@ -727,6 +712,15 @@ impl<'a> ApiRequestBuilder<'a> {
 /// (1-indexed): 200ms, 400ms, 800ms, ...
 fn retry_delay_ms(attempt: u32) -> u64 {
     200_u64.saturating_mul(1_u64 << attempt.saturating_sub(1).min(16))
+}
+
+/// Parses response header `name` as `T`, or `None` if it is absent, not
+/// valid UTF-8, or unparseable.
+fn header_value<T: std::str::FromStr>(
+    resp: &reqwest::Response,
+    name: &str,
+) -> Option<T> {
+    resp.headers().get(name)?.to_str().ok()?.parse().ok()
 }
 
 /// Returns `resp` if its status is 2xx. Maps 412 to

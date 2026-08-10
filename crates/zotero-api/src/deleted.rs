@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     client::{ZoteroClient, ZoteroResponse},
     errors::ZoteroApiError,
+    keys::{CollectionKey, ItemKey, SearchKey, TagName},
 };
 
 /// Deleted object keys returned by Zotero's incremental sync protocol.
@@ -40,16 +41,16 @@ use crate::{
 pub struct DeletedObjectsResponse {
     /// Deleted collection keys.
     #[serde(default)]
-    pub collections: Vec<String>,
+    pub collections: Vec<CollectionKey>,
     /// Deleted saved search keys.
     #[serde(default)]
-    pub searches: Vec<String>,
+    pub searches: Vec<SearchKey>,
     /// Deleted item keys.
     #[serde(default)]
-    pub items: Vec<String>,
-    /// Deleted tag strings.
+    pub items: Vec<ItemKey>,
+    /// Deleted tag names.
     #[serde(default)]
-    pub tags: Vec<String>,
+    pub tags: Vec<TagName>,
 }
 
 impl ZoteroClient {
@@ -108,8 +109,8 @@ mod tests {
 
         let deleted =
             client.get_deleted(LibraryVersion::new(10)).await.unwrap();
-        assert_eq!(deleted.items, vec!["I1".to_owned(), "I2".to_owned()]);
-        assert_eq!(deleted.collections, vec!["C1".to_owned()]);
-        assert_eq!(deleted.tags, vec!["tag1".to_owned()]);
+        assert_eq!(deleted.items, vec!["I1", "I2"]);
+        assert_eq!(deleted.collections, vec!["C1"]);
+        assert_eq!(deleted.tags, vec!["tag1"]);
     }
 }

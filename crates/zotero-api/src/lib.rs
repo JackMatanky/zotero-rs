@@ -94,7 +94,7 @@ pub use collections::CollectionItemAction;
 pub use deleted::DeletedObjectsResponse;
 pub use errors::ZoteroApiError;
 pub use items::TrashAction;
-pub use keys::{CollectionKey, ItemKey, TagName};
+pub use keys::{CollectionKey, ItemKey, SearchKey, TagName};
 #[cfg(feature = "metadata")]
 pub use metadata::{
     IdentifierKind, resolve_metadata, resolve_metadata_with_urls,
