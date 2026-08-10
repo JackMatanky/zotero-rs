@@ -252,14 +252,9 @@ impl ZoteroClient {
             "name": new_name,
             "parentCollection": new_parent,
         });
-        let resp = crate::client::ensure_success(
-            self.put(format!("/collections/{key}"))
-                .json(payload)
-                .send_raw()
-                .await?,
-        )
-        .await?;
-        crate::client::decode_or_refetch(resp, || self.get_collection(key))
+        self.put(format!("/collections/{key}"))
+            .json(payload)
+            .send_or_refetch(|| self.get_collection(key))
             .await
     }
 

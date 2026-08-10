@@ -199,11 +199,10 @@ impl ZoteroClient {
         fields: serde_json::Value,
     ) -> Result<ZoteroItem, ZoteroApiError> {
         let key = item_key.as_ref();
-        let resp = crate::client::ensure_success(
-            self.patch(format!("/items/{key}")).json(fields).send_raw().await?,
-        )
-        .await?;
-        crate::client::decode_or_refetch(resp, || self.get_item(key)).await
+        self.patch(format!("/items/{key}"))
+            .json(fields)
+            .send_or_refetch(|| self.get_item(key))
+            .await
     }
 
     /// Permanently deletes an item from the library.

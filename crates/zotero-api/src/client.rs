@@ -706,6 +706,34 @@ impl<'a> ApiRequestBuilder<'a> {
         ensure_success(self.send_raw().await?).await?;
         Ok(())
     }
+
+    /// Sends the request and decodes the response as `T`, refetching via
+    /// `refetch` if Zotero returns an empty body (as it does for
+    /// `PATCH`/`PUT` on a single object).
+    ///
+    /// # Errors
+    ///
+    /// - [`LocalApi`] if Zotero returns a non-2xx status
+    /// - [`VersionConflict`] if Zotero rejects a stale write
+    /// - [`Network`] if the request fails
+    /// - propagates any error `refetch` returns
+    ///
+    /// [`LocalApi`]: ZoteroApiError::LocalApi
+    /// [`VersionConflict`]: ZoteroApiError::VersionConflict
+    /// [`Network`]: ZoteroApiError::Network
+    #[inline]
+    pub async fn send_or_refetch<T, F, Fut>(
+        &self,
+        refetch: F,
+    ) -> Result<T, ZoteroApiError>
+    where
+        T: DeserializeOwned,
+        F: FnOnce() -> Fut,
+        Fut: Future<Output = Result<T, ZoteroApiError>>,
+    {
+        let resp = ensure_success(self.send_raw().await?).await?;
+        decode_or_refetch(resp, refetch).await
+    }
 }
 
 /// Computes exponential backoff delay in milliseconds for `attempt`
