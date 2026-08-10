@@ -115,7 +115,20 @@ open_string_enum! {
 
 impl ItemType {
     /// Returns `true` if this item type is eligible for search and embedding
-    /// indexing: everything except attachments, notes, and annotations.
+    /// indexing.
+    ///
+    /// Excludes [`Attachment`](Self::Attachment), [`Note`](Self::Note), and
+    /// [`Annotation`](Self::Annotation) — these are auxiliary content, not
+    /// standalone searchable items.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use zotero_api::ItemType;
+    ///
+    /// assert!(ItemType::JournalArticle.is_indexable());
+    /// assert!(!ItemType::Attachment.is_indexable());
+    /// ```
     #[inline]
     #[must_use]
     pub fn is_indexable(&self) -> bool {
@@ -177,6 +190,24 @@ open_string_enum! {
 }
 
 /// Parent relationship for a Zotero collection.
+///
+/// On the wire, Zotero encodes this as either `false` (top-level) or a string
+/// containing the parent collection's key. This enum deserializes both forms
+/// transparently.
+///
+/// # Examples
+///
+/// ```
+/// use zotero_api::{CollectionKey, CollectionParent};
+///
+/// let top: CollectionParent =
+///     serde_json::from_value(serde_json::json!(false)).unwrap();
+/// assert_eq!(top, CollectionParent::TopLevel);
+///
+/// let child: CollectionParent =
+///     serde_json::from_value(serde_json::json!("ABC123")).unwrap();
+/// assert_eq!(child, CollectionParent::Parent(CollectionKey::from("ABC123")));
+/// ```
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(from = "serde_json::Value", into = "serde_json::Value")]
 pub enum CollectionParent {
@@ -216,6 +247,16 @@ impl From<CollectionParent> for serde_json::Value {
 ///
 /// Zotero uses `0` for user-created tags and `1` for tags assigned
 /// automatically on import.
+///
+/// # Examples
+///
+/// ```
+/// use zotero_api::TagOrigin;
+///
+/// assert_eq!(TagOrigin::from(0), TagOrigin::User);
+/// assert_eq!(TagOrigin::from(1), TagOrigin::Automatic);
+/// assert_eq!(TagOrigin::from(42), TagOrigin::Other(42));
+/// ```
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize,
 )]
