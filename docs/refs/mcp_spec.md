@@ -1294,9 +1294,11 @@ This flow is implemented in MCP using the following Types.
 
 ###### InputRequests
 
-An [`InputRequests`](/specification/2026-07-28/schema#inputrequests) object is a map of server-client requests.
-Keys are server-assigned string identifiers;
-values are request objects (e.g., [`ElicitRequest`](/specification/2026-07-28/schema#elicitrequest), [`CreateMessageRequest`](/specification/2026-07-28/schema#createmessagerequest), or [`ListRootsRequest`](/specification/2026-07-28/schema#listrootsrequest)).
+An [`InputRequests`](/specification/2026-07-28/schema#inputrequests) object is a
+map of server-client requests. Keys are server-assigned string identifiers; values
+are request objects (e.g., [`ElicitRequest`](/specification/2026-07-28/schema#elicitrequest),
+[`CreateMessageRequest`](/specification/2026-07-28/schema#createmessagerequest),
+or [`ListRootsRequest`](/specification/2026-07-28/schema#listrootsrequest)).
 
 ```json
 {
@@ -1335,8 +1337,12 @@ values are request objects (e.g., [`ElicitRequest`](/specification/2026-07-28/sc
 
 ###### InputResponses
 
-An [`InputResponses`](/specification/2026-07-28/schema#inputresponses) object is a map of client responses to the server requests.
-Keys correspond to the keys in the `InputRequests` map; values are the client's result for each request (e.g., [`ElicitResult`](/specification/2026-07-28/schema#elicitresult), [`CreateMessageResult`](/specification/2026-07-28/schema#createmessageresult), or [`ListRootsResult`](/specification/2026-07-28/schema#listrootsresult)).
+An [`InputResponses`](/specification/2026-07-28/schema#inputresponses) object is
+a map of client responses to the server requests. Keys correspond to the keys in
+the `InputRequests` map; values are the client's result for each request (e.g.,
+[`ElicitResult`](/specification/2026-07-28/schema#elicitresult),
+[`CreateMessageResult`](/specification/2026-07-28/schema#createmessageresult),
+or [`ListRootsResult`](/specification/2026-07-28/schema#listrootsresult)).
 
 ```json
 {
@@ -1430,11 +1436,14 @@ Servers **MUST NOT** send `InputRequiredResult` responses on any other client re
 
 ##### Basic Workflow
 
-The basic workflow describes how a server can request additional input from the client as part of a client-server request.
-In this example we use `tools/call` as the client request, but the same pattern applies to any of the supported requests listed above.
+The basic workflow describes how a server can request additional input from the
+client as part of a client-server request. In this example we use `tools/call`
+as the client request, but the same pattern applies to any of the supported
+requests listed above.
 
-Notably, it allows servers to request additional information without maintaining any server-side state.
-The server encodes any needed context into the `requestState` field, which the client echoes back on retry.
+Notably, it allows servers to request additional information without maintaining
+any server-side state. The server encodes any needed context into the `requestState`
+field, which the client echoes back on retry.
 
 ```mermaid
 sequenceDiagram
