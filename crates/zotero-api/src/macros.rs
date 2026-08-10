@@ -109,7 +109,7 @@ macro_rules! string_newtype {
 /// does not name explicitly, so serialization round-trips without dropping
 /// unrecognized values.
 ///
-/// Generates: the enum (with the trailing `Other(String)` variant — do not
+/// Generates: the enum (with the trailing `Other(String)` variant; do not
 /// list it), `#[derive(Debug, Clone, PartialEq, Eq, Serialize,
 /// Deserialize)]`, `#[serde(from = "String", into = "String")]`, an inherent
 /// `as_str(&self) -> &str`, `From<String>`, `From<&str>`, and `From<$name> for
@@ -117,7 +117,7 @@ macro_rules! string_newtype {
 ///
 /// Each variant is written as `Variant => "wireValue",` and may carry its own
 /// doc comment. Type-specific inherent methods (e.g. a `Default` impl or an
-/// extra predicate method) are NOT generated — write a separate `impl $name`
+/// extra predicate method) are NOT generated. Write a separate `impl $name`
 /// block after the macro invocation for those.
 macro_rules! open_string_enum {
     (

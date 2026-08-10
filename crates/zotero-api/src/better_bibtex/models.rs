@@ -43,7 +43,7 @@ use crate::keys::{CitationKey, ItemKey};
 string_newtype!(
     pub CollectionPath,
     concat!(
-        "Better `BibTeX` collection path, represented as \
+        "Better BibTeX collection path, represented as \
          forward-slash-separated ",
         "collections where `//` targets the user's personal library root. ",
         "Distinct from Zotero collection keys."
@@ -109,16 +109,18 @@ pub enum BibliographyContentType {
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BibliographyFormat {
-    /// Output content type (`Html` or `Text`).
+    /// Output content type, either [`BibliographyContentType::Html`] or
+    /// [`BibliographyContentType::Text`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub content_type: Option<BibliographyContentType>,
-    /// CSL style identifier (for example, `"apa"`).
+    /// CSL style identifier, for example `"apa"` or a full style URI.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub id: Option<CslStyleId>,
     /// CSL locale identifier (for example, `"en-US"`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub locale: Option<Locale>,
-    /// Whether to apply Zotero quick-copy preferences.
+    /// Whether to apply Zotero quick-copy preferences instead of explicit
+    /// style options.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub quick_copy: Option<bool>,
 }
@@ -129,16 +131,18 @@ pub struct BibliographyFormat {
 /// options.
 #[derive(Clone, Debug, Default, Deserialize)]
 pub struct AutoExportAddRequest {
-    /// Target collection path to export.
+    /// Target collection path to export, with `"//"` selecting the personal
+    /// library root.
     pub collection: CollectionPath,
     /// Better `BibTeX` translator name or GUID.
     pub translator: TranslatorName,
-    /// Destination output filepath; requires filepath features enabled and an
+    /// Destination output filepath. Requires filepath features enabled and an
     /// allowed export directory.
     pub path: ExportFilePath,
-    /// Optional display options key-value mapping.
+    /// Optional Better `BibTeX` display options passed to the translator.
     pub display_options: Option<HashMap<String, bool>>,
-    /// Whether to replace an existing auto-export configuration.
+    /// Whether Better `BibTeX` should replace an existing matching auto-export
+    /// configuration.
     pub replace: Option<bool>,
 }
 

@@ -1,14 +1,15 @@
 #![cfg(feature = "sqlite")]
 //! Read-only access to Zotero's local `zotero.sqlite` database.
 //!
-//! Locates the database using the standard Zotero desktop configuration search
-//! order: the `ZOTERO_DB_PATH` environment variable, the `prefs.js` `dataDir`
-//! preference, or the per-user default Zotero data directory.
+//! This module locates Zotero's desktop database and opens it without taking
+//! write locks. The connection uses `SQLite` `immutable=1` with read-only
+//! flags, which lets this crate read from a live Zotero library without causing
+//! or waiting on `SQLITE_BUSY` lock contention.
 //!
-//! The database is opened with `SQLite` `immutable=1` and read-only flags so a
-//! running Zotero instance does not block reads. Queries inspect Zotero's
-//! `itemData`, `fulltextWords`, `itemNotes`, and `itemAnnotations` tables
-//! directly.
+//! Queries inspect Zotero's `itemData`, `fulltextWords`, `itemNotes`, and
+//! `itemAnnotations` tables directly. Full-text searches combine item metadata
+//! with Zotero's indexed attachment words, while note and annotation searches
+//! return readable note text and PDF annotation details.
 //!
 //! # Main Types
 //!
@@ -51,7 +52,31 @@ const FULLTEXT_SCAN_CAP: usize = 2000;
 /// Maximum number of characters of a full-text snippet returned to clients.
 const SNIPPET_CHARS: usize = 400;
 
-/// Opens Zotero's local `SQLite` database in immutable read-only mode.
+/// Immutable read-only handle to Zotero's local `SQLite` database.
+///
+/// [`LocalZoteroDb`] opens `zotero.sqlite` with `immutable=1` and read-only
+/// connection flags. `SQLite` then skips file locks, so reads do not compete
+/// with a running Zotero process and avoid `SQLITE_BUSY` failures from the live
+/// desktop database.
+///
+/// Immutable mode reads only the main database file. If Zotero has
+/// uncheckpointed writes in its WAL files, results can lag until Zotero
+/// checkpoints those changes into `zotero.sqlite`.
+///
+/// # Examples
+///
+/// ```no_run
+/// # use zotero_api::LocalZoteroDb;
+/// # async fn run() -> Result<(), Box<dyn std::error::Error>> {
+/// let db = LocalZoteroDb::open(std::path::Path::new(
+///     "/Users/alice/Zotero/zotero.sqlite",
+/// ))
+/// .await?;
+/// let hits = db.search_fulltext("retrieval", 5).await?;
+/// assert!(hits.len() <= 5);
+/// # Ok(())
+/// # }
+/// ```
 #[derive(Clone, Debug)]
 pub struct LocalZoteroDb {
     /// Connection pool for executing queries against the `SQLite` database.
@@ -68,7 +93,11 @@ pub(crate) enum HitKind {
     Annotation,
 }
 
-/// A single full-text search hit.
+/// A single full-text search hit with item metadata.
+///
+/// Values come from parent Zotero items, not attachment rows. The hit includes
+/// bibliographic metadata such as title, DOI, and creators, plus a short
+/// snippet from the matched indexed full-text words.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct FulltextHit {
     /// Unique key identifying the matched item.
@@ -87,7 +116,11 @@ pub struct FulltextHit {
     pub(crate) snippet: String,
 }
 
-/// A single note or annotation search hit.
+/// A single note or PDF annotation search hit.
+///
+/// The hit kind discriminator distinguishes child notes from PDF annotations.
+/// Notes carry Zotero's stored note body, while annotations can include
+/// annotation text, user comments, page labels, and colors.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct NoteAnnotationHit {
     /// Discriminator identifying whether the hit is a note or annotation.
@@ -117,10 +150,10 @@ pub struct NoteAnnotationHit {
 impl LocalZoteroDb {
     /// Opens `path` with `SQLite` `immutable=1` and read-only semantics.
     ///
-    /// `immutable=1` skips file locking but also ignores the `-wal`/`-shm`
+    /// `immutable=1` skips file locking but also ignores the `-wal` and `-shm`
     /// files, so reads can lag behind a running Zotero's WAL writes until a
-    /// checkpoint lands in the main file. This mirrors the zotero-digest
-    /// approach to avoid `SQLITE_BUSY` against the live database.
+    /// checkpoint lands in the main file. This avoids `SQLITE_BUSY` failures
+    /// against the live database.
     ///
     /// # Errors
     ///
@@ -171,8 +204,22 @@ impl LocalZoteroDb {
         Ok(())
     }
 
-    /// Searches the library for `query` across title, DOI, extra, and indexed
-    /// fulltext, returning at most `limit` hits.
+    /// Searches item metadata and indexed full text for `query`.
+    ///
+    /// The full-text side tokenizes `query` by splitting on punctuation and
+    /// other non-alphanumeric characters, lowercasing each token, and removing
+    /// duplicates. A full-text match requires every resulting token to appear
+    /// in Zotero's indexed attachment words for the parent item.
+    ///
+    /// Metadata matching is separate and uses a case-insensitive substring
+    /// match across title, DOI, extra, and creator names. A hit is returned
+    /// when either metadata matches the original query string or the
+    /// indexed full text matches all tokens.
+    ///
+    /// No separate relevance score is computed. `SQLite` returns matching
+    /// metadata and full-text candidates in query order after deleted items,
+    /// attachments, notes, and annotations are excluded. The result set is
+    /// capped before Rust filtering and then truncated to `limit`.
     ///
     /// # Errors
     ///
@@ -333,11 +380,15 @@ impl LocalZoteroDb {
         Ok(hits)
     }
 
-    /// Searches child notes and PDF annotations for `query`, returning at most
-    /// `limit` hits.
+    /// Searches child notes and PDF annotations for `query`.
     ///
-    /// Mirrors the digest's `search_notes_local` and `search_annotations_local`
-    /// queries.
+    /// Note rows are fetched with Zotero's stored HTML, then tags are stripped
+    /// before the final case-insensitive match. This prevents matches that only
+    /// appear in markup or attributes from being returned as visible note hits.
+    ///
+    /// Annotation rows are matched against annotation text and user comments.
+    /// Returned [`NoteAnnotationHit`] values distinguish child notes from PDF
+    /// annotations through their kind field.
     ///
     /// # Errors
     ///
@@ -436,8 +487,15 @@ impl LocalZoteroDb {
     }
 }
 
-/// Locates `zotero.sqlite` using `override_path`, `ZOTERO_DB_PATH`, profile
-/// preferences, or the per-user default, in that order.
+/// Locates Zotero's local `zotero.sqlite` database.
+///
+/// Search order:
+///
+/// - `override_path`, returned as-is when provided.
+/// - `ZOTERO_DB_PATH`, when it points to an existing file.
+/// - Zotero profile directories, using `prefs.js` `extensions.zotero.dataDir`
+///   first and then `zotero.sqlite` inside the profile directory.
+/// - The per-user default `~/Zotero/zotero.sqlite`.
 #[inline]
 pub fn find_zotero_db(override_path: Option<&Path>) -> Option<PathBuf> {
     if let Some(path) = override_path {

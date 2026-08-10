@@ -1,8 +1,21 @@
 //! Async HTTP client for the Zotero Local API.
 //!
-//! Defines [`ZoteroClient`], the primary HTTP request builder and dispatcher
-//! for Zotero Local API operations. The client handles target library scoping,
-//! authentication headers, error conversion, and response decoding.
+//! [`ZoteroClient`] is the primary request builder and dispatcher for Zotero
+//! Local API operations. It handles library scoping, authentication headers,
+//! retry logic, error conversion, and JSON response decoding.
+//!
+//! # Examples
+//!
+//! ```no_run
+//! use zotero_api::{ZoteroApiError, ZoteroClient};
+//!
+//! # async fn run() -> Result<(), ZoteroApiError> {
+//! let client = ZoteroClient::new("http://127.0.0.1:23119/api");
+//! let status = client.check_status().await;
+//! assert!(status.url.contains("/api"));
+//! # Ok(())
+//! # }
+//! ```
 
 use std::{future::Future, time::Duration};
 
@@ -14,8 +27,15 @@ use crate::{
     objects::{LocalApiStatus, ZoteroItem},
 };
 
-/// Generic envelope wrapping API response payloads alongside Zotero response
-/// headers.
+/// Wraps an API response payload with Zotero response headers.
+///
+/// [`Deref`]s to `T`, so you can access the payload directly. Headers like
+/// [`total_results`] and [`last_modified_version`] carry metadata from
+/// `Total-Results` and `Last-Modified-Version` response headers.
+///
+/// [`Deref`]: std::ops::Deref
+/// [`total_results`]: ZoteroResponse::total_results
+/// [`last_modified_version`]: ZoteroResponse::last_modified_version
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ZoteroResponse<T> {
     /// Deserialized response body payload.
@@ -37,7 +57,7 @@ impl<T> std::ops::Deref for ZoteroResponse<T> {
     }
 }
 
-/// One page of Zotero items and the optional `Total-Results` header count.
+/// A single page of [`ZoteroItem`]s with the optional `Total-Results` count.
 pub(super) struct ItemsPage {
     /// Fetched items for the requested page.
     pub(super) items: Vec<ZoteroItem>,
@@ -45,7 +65,10 @@ pub(super) struct ItemsPage {
     pub(super) total: Option<usize>,
 }
 
-/// Target Zotero library (User or Group).
+/// Target library for API requests (user or group).
+///
+/// Default is [`User(0)`](LibraryTarget::User), which targets the active local
+/// user's library.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum LibraryTarget {
@@ -75,7 +98,10 @@ impl LibraryTarget {
     }
 }
 
-/// Response payload returned by `POST /api/local/authorize`.
+/// Response from `POST /api/local/authorize`.
+///
+/// Contains a write token for local API authorization and an optional backoff
+/// delay if user interaction is pending.
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct LocalAuthResponse {
@@ -85,7 +111,11 @@ pub struct LocalAuthResponse {
     pub backoff: Option<u64>,
 }
 
-/// Owned, `'static` async client for the Zotero Local HTTP API.
+/// Async client for the Zotero Local HTTP API.
+///
+/// Wraps a [`reqwest::Client`] with Zotero-specific headers, library targeting,
+/// and retry logic. Construct via [`ZoteroClient::new`] or
+/// [`ZoteroClient::default`].
 #[derive(Clone, Debug)]
 pub struct ZoteroClient {
     pub(super) http: reqwest::Client,
@@ -103,7 +133,20 @@ impl Default for ZoteroClient {
 }
 
 impl ZoteroClient {
-    /// Creates a new [`ZoteroClient`] with the specified base URL.
+    /// Creates a new [`ZoteroClient`] targeting the given `base_url`.
+    ///
+    /// Falls back to `http://127.0.0.1:23119/api` if `base_url` is empty. The
+    /// default library target is
+    /// [`LibraryTarget::User(0)`](LibraryTarget::User).
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use zotero_api::client::ZoteroClient;
+    ///
+    /// let client = ZoteroClient::new("http://127.0.0.1:23119/api");
+    /// assert_eq!(client.base_url(), "http://127.0.0.1:23119/api");
+    /// ```
     #[inline]
     pub fn new<S: Into<String>>(base_url: S) -> Self {
         let base_url = base_url.into();
@@ -120,7 +163,7 @@ impl ZoteroClient {
         }
     }
 
-    /// Configures a custom [`reqwest::Client`] HTTP client pool.
+    /// Replaces the default [`reqwest::Client`] with a custom one.
     #[must_use]
     #[inline]
     pub fn with_client(mut self, http: reqwest::Client) -> Self {
@@ -128,7 +171,8 @@ impl ZoteroClient {
         self
     }
 
-    /// Configures the API key (`Zotero-API-Key` or `Zotero-Write-Key`).
+    /// Sets the API key sent as `Zotero-API-Key` and `Zotero-Write-Key`
+    /// headers.
     #[must_use]
     #[inline]
     pub fn with_api_key<S: Into<String>>(mut self, key: S) -> Self {
@@ -136,7 +180,7 @@ impl ZoteroClient {
         self
     }
 
-    /// Configures the expected server ID (`Zotero-Server-ID`).
+    /// Sets the expected server ID sent as the `Zotero-Server-ID` header.
     #[must_use]
     #[inline]
     pub fn with_server_id<S: Into<String>>(mut self, server_id: S) -> Self {
@@ -144,7 +188,7 @@ impl ZoteroClient {
         self
     }
 
-    /// Scopes the client to a specific [`LibraryTarget`] (User or Group).
+    /// Scopes requests to a specific [`LibraryTarget`].
     #[must_use]
     #[inline]
     pub fn with_target(mut self, target: LibraryTarget) -> Self {
@@ -152,14 +196,14 @@ impl ZoteroClient {
         self
     }
 
-    /// Returns a reference to the inner [`reqwest::Client`].
+    /// Returns the inner [`reqwest::Client`].
     #[must_use]
     #[inline]
     pub fn http(&self) -> &reqwest::Client {
         &self.http
     }
 
-    /// Returns the configured base URL string.
+    /// Returns the base URL.
     #[must_use]
     #[inline]
     pub fn base_url(&self) -> &str {
@@ -173,39 +217,38 @@ impl ZoteroClient {
         self.target
     }
 
-    /// Returns the target library URL prefix (e.g. `/users/0` or
-    /// `/groups/12345`).
+    /// Returns the URL path prefix (e.g. `/users/0` or `/groups/12345`).
     #[must_use]
     #[inline]
     pub fn target_prefix(&self) -> String {
         self.target.target_prefix()
     }
 
-    /// Creates a fluent request builder for a `GET` request.
+    /// Creates a builder for a `GET` request to `path`.
     #[inline]
     pub fn get<K: Into<String>>(&self, path: K) -> ApiRequestBuilder<'_> {
         ApiRequestBuilder::new(self, reqwest::Method::GET, path)
     }
 
-    /// Creates a fluent request builder for a `POST` request.
+    /// Creates a builder for a `POST` request to `path`.
     #[inline]
     pub fn post<K: Into<String>>(&self, path: K) -> ApiRequestBuilder<'_> {
         ApiRequestBuilder::new(self, reqwest::Method::POST, path)
     }
 
-    /// Creates a fluent request builder for a `PUT` request.
+    /// Creates a builder for a `PUT` request to `path`.
     #[inline]
     pub fn put<K: Into<String>>(&self, path: K) -> ApiRequestBuilder<'_> {
         ApiRequestBuilder::new(self, reqwest::Method::PUT, path)
     }
 
-    /// Creates a fluent request builder for a `PATCH` request.
+    /// Creates a builder for a `PATCH` request to `path`.
     #[inline]
     pub fn patch<K: Into<String>>(&self, path: K) -> ApiRequestBuilder<'_> {
         ApiRequestBuilder::new(self, reqwest::Method::PATCH, path)
     }
 
-    /// Creates a fluent request builder for a `DELETE` request.
+    /// Creates a builder for a `DELETE` request to `path`.
     #[inline]
     pub fn delete_req<K: Into<String>>(
         &self,
@@ -215,6 +258,21 @@ impl ZoteroClient {
     }
 
     /// Probes the Zotero Local API for availability.
+    ///
+    /// Sends `GET /items?limit=1` and returns a [`LocalApiStatus`] indicating
+    /// whether the API is online, the server version, and any error message.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// # async fn example() {
+    /// use zotero_api::client::ZoteroClient;
+    ///
+    /// let client = ZoteroClient::default();
+    /// let status = client.check_status().await;
+    /// assert!(status.online);
+    /// # }
+    /// ```
     #[inline]
     pub async fn check_status(&self) -> LocalApiStatus {
         match self.get("/items").query("limit", "1").send_raw().await {
@@ -251,10 +309,30 @@ impl ZoteroClient {
     }
 
     /// Requests local API write authorization via `POST /api/local/authorize`.
+    ///
+    /// Returns a [`LocalAuthResponse`] containing a write token and optional
+    /// backoff delay.
+    ///
     /// # Errors
     ///
-    /// Returns [`ZoteroApiError::LocalApi`] if Zotero rejects the request, or
-    /// [`ZoteroApiError::Network`] if the request fails.
+    /// - [`LocalApi`] if Zotero rejects the request
+    /// - [`Network`] if the request fails
+    ///
+    /// [`LocalApi`]: ZoteroApiError::LocalApi
+    /// [`Network`]: ZoteroApiError::Network
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// # async fn example() -> Result<(), zotero_api::errors::ZoteroApiError> {
+    /// use zotero_api::client::ZoteroClient;
+    ///
+    /// let client = ZoteroClient::default();
+    /// let auth = client.request_local_authorization("my-app").await?;
+    /// println!("secret: {}", auth.secret);
+    /// # Ok(())
+    /// # }
+    /// ```
     #[inline]
     pub async fn request_local_authorization(
         &self,
@@ -269,7 +347,7 @@ impl ZoteroClient {
         Ok(res.data)
     }
 
-    /// Helper: GET request returning decoded JSON payload.
+    /// Fetches `url` and deserializes the JSON body as `T`.
     pub(super) async fn get_json<T: DeserializeOwned>(
         &self,
         url: &str,
@@ -279,11 +357,17 @@ impl ZoteroClient {
         Ok(res.data)
     }
 
-    /// Helper: Fetches every page of a paginated list endpoint.
+    /// Fetches every page of a paginated list endpoint.
+    ///
     /// # Errors
     ///
-    /// Returns [`ZoteroApiError::LocalApi`]/[`ZoteroApiError::Network`]/
-    /// [`ZoteroApiError::Json`] if any page request fails.
+    /// - [`LocalApi`] if Zotero returns a non-2xx status
+    /// - [`Network`] if any page request fails
+    /// - [`Json`] if any page cannot be deserialized
+    ///
+    /// [`LocalApi`]: ZoteroApiError::LocalApi
+    /// [`Network`]: ZoteroApiError::Network
+    /// [`Json`]: ZoteroApiError::Json
     #[inline]
     pub async fn get_all_json<T: DeserializeOwned>(
         &self,
@@ -308,7 +392,7 @@ impl ZoteroClient {
         Ok(all)
     }
 
-    /// Helper: Fetches one page of items alongside the `Total-Results` count.
+    /// Fetches one page of items alongside the `Total-Results` header.
     pub(super) async fn get_items_with_total(
         &self,
         url: &str,
@@ -321,7 +405,7 @@ impl ZoteroClient {
         })
     }
 
-    /// Fetches the current library version counter via `Last-Modified-Version`
+    /// Fetches the current library version from the `Last-Modified-Version`
     /// header.
     pub(super) async fn get_library_version(
         &self,
@@ -337,8 +421,8 @@ impl ZoteroClient {
         })
     }
 
-    /// Batch-deletes objects at `path` by `key_param`
-    /// (`itemKey`/`collectionKey`/ `searchKey`), guarded by `version`.
+    /// Batch-deletes objects at `path` by key parameter (`itemKey` /
+    /// `collectionKey` / `searchKey`), guarded by `version`.
     pub(super) async fn delete_by_keys<K: AsRef<str>, V: Into<u64>>(
         &self,
         path: &str,
@@ -361,6 +445,10 @@ impl ZoteroClient {
 }
 
 /// Fluent builder for HTTP requests to Zotero API endpoints.
+///
+/// Created via [`ZoteroClient::get`], [`ZoteroClient::post`], etc. Chain query
+/// parameters, headers, and JSON bodies, then call [`send`](Self::send) or
+/// [`send_raw`](Self::send_raw).
 pub struct ApiRequestBuilder<'a> {
     client: &'a ZoteroClient,
     method: reqwest::Method,
@@ -372,7 +460,7 @@ pub struct ApiRequestBuilder<'a> {
 }
 
 impl<'a> ApiRequestBuilder<'a> {
-    /// Creates a new request builder.
+    /// Creates a new builder for `method` at `path`.
     #[inline]
     pub fn new<K: Into<String>>(
         client: &'a ZoteroClient,
@@ -390,8 +478,9 @@ impl<'a> ApiRequestBuilder<'a> {
         }
     }
 
-    /// Sets whether the request path is automatically prefixed with target
-    /// library (default `true`).
+    /// Sets whether the path is prefixed with the target library path.
+    ///
+    /// Default is `true`, which prepends `/users/{id}` or `/groups/{id}`.
     #[must_use]
     #[inline]
     pub fn target_scoped(mut self, scoped: bool) -> Self {
@@ -399,7 +488,7 @@ impl<'a> ApiRequestBuilder<'a> {
         self
     }
 
-    /// Appends a query parameter key-value pair.
+    /// Appends a query parameter.
     #[must_use]
     #[inline]
     pub fn query<K: Into<String>, V: Into<String>>(
@@ -411,7 +500,7 @@ impl<'a> ApiRequestBuilder<'a> {
         self
     }
 
-    /// Appends an optional query parameter key-value pair if value is `Some`.
+    /// Appends a query parameter if `value` is `Some`.
     #[must_use]
     #[inline]
     pub fn query_opt<K: Into<String>, V: Into<String>>(
@@ -425,7 +514,8 @@ impl<'a> ApiRequestBuilder<'a> {
         self
     }
 
-    /// Sets the `If-Unmodified-Since-Version` header.
+    /// Sets the `If-Unmodified-Since-Version` header for optimistic
+    /// concurrency.
     #[must_use]
     #[inline]
     pub fn unmodified_since_version(mut self, version: u64) -> Self {
@@ -433,7 +523,7 @@ impl<'a> ApiRequestBuilder<'a> {
         self
     }
 
-    /// Sets a JSON body payload.
+    /// Sets a JSON request body.
     #[must_use]
     #[inline]
     pub fn json(mut self, body: serde_json::Value) -> Self {
@@ -442,10 +532,16 @@ impl<'a> ApiRequestBuilder<'a> {
     }
 
     /// Sends the request, returning the raw [`reqwest::Response`].
+    ///
+    /// Retries on 429 (Too Many Requests) and 5xx server errors up to 3
+    /// attempts with exponential backoff (200ms, 400ms, 800ms). Respects
+    /// `Retry-After` headers when present.
+    ///
     /// # Errors
     ///
-    /// Returns [`ZoteroApiError::Network`] if every retry attempt fails at the
-    /// transport level.
+    /// - [`Network`] if all retry attempts fail
+    ///
+    /// [`Network`]: ZoteroApiError::Network
     #[inline]
     pub async fn send_raw(&self) -> Result<reqwest::Response, ZoteroApiError> {
         let full_url = if self.path.starts_with("http://")
@@ -520,14 +616,20 @@ impl<'a> ApiRequestBuilder<'a> {
         }
     }
 
-    /// Sends the request and deserializes the JSON response body into
+    /// Sends the request and deserializes the JSON body into
     /// [`ZoteroResponse<T>`].
+    ///
     /// # Errors
     ///
-    /// Returns [`ZoteroApiError::LocalApi`]/[`ZoteroApiError::VersionConflict`]
-    /// if the response status is not 2xx, or
-    /// [`ZoteroApiError::Network`]/[`ZoteroApiError::Json`] if the request
-    /// fails or the body cannot be decoded.
+    /// - [`LocalApi`] if Zotero returns a non-2xx status
+    /// - [`VersionConflict`] if Zotero rejects a stale write
+    /// - [`Network`] if the request fails
+    /// - [`Json`] if the body cannot be decoded
+    ///
+    /// [`LocalApi`]: ZoteroApiError::LocalApi
+    /// [`VersionConflict`]: ZoteroApiError::VersionConflict
+    /// [`Network`]: ZoteroApiError::Network
+    /// [`Json`]: ZoteroApiError::Json
     #[inline]
     pub async fn send<T: DeserializeOwned>(
         &self,
@@ -536,8 +638,8 @@ impl<'a> ApiRequestBuilder<'a> {
             .await
     }
 
-    /// Extracts Zotero response headers and decodes the JSON body of an
-    /// already-successful (2xx) response.
+    /// Extracts Zotero headers and decodes the JSON body of a successful
+    /// response.
     async fn decode_success<T: DeserializeOwned>(
         resp: reqwest::Response,
     ) -> Result<ZoteroResponse<T>, ZoteroApiError> {
@@ -566,16 +668,25 @@ impl<'a> ApiRequestBuilder<'a> {
         })
     }
 
-    /// Sends the request, returning [`ZoteroApiError::NotFound`] with
-    /// `missing`'s message as the payload if the response status is `404`,
-    /// otherwise decoding the response like [`Self::send`].
+    /// Sends the request, returning [`ZoteroApiError::NotFound`] for 404
+    /// responses instead of decoding.
+    ///
+    /// The `missing` value becomes the error message for 404s. All other status
+    /// codes behave like [`send`](Self::send).
+    ///
     /// # Errors
     ///
-    /// Returns [`ZoteroApiError::NotFound`] if the response status is `404`,
-    /// [`ZoteroApiError::LocalApi`]/[`ZoteroApiError::VersionConflict`] for
-    /// any other non-2xx status, or
-    /// [`ZoteroApiError::Network`]/[`ZoteroApiError::Json`] if the request
-    /// fails or the body cannot be decoded.
+    /// - [`NotFound`] if Zotero returns 404
+    /// - [`LocalApi`] if Zotero returns another non-2xx status
+    /// - [`VersionConflict`] if Zotero rejects a stale write
+    /// - [`Network`] if the request fails
+    /// - [`Json`] if the body cannot be decoded
+    ///
+    /// [`NotFound`]: ZoteroApiError::NotFound
+    /// [`LocalApi`]: ZoteroApiError::LocalApi
+    /// [`VersionConflict`]: ZoteroApiError::VersionConflict
+    /// [`Network`]: ZoteroApiError::Network
+    /// [`Json`]: ZoteroApiError::Json
     #[inline]
     pub async fn send_or_not_found<
         T: DeserializeOwned,
@@ -591,16 +702,20 @@ impl<'a> ApiRequestBuilder<'a> {
         Self::decode_success(ensure_success(resp).await?).await
     }
 
-    /// Sends the request and checks for a successful (2xx) status without
-    /// attempting to decode a response body.
+    /// Sends the request without decoding a response body.
     ///
-    /// Use for endpoints that return `204 No Content` (or any other body
-    /// that is not a `ZoteroResponse` envelope), such as `DELETE` requests.
+    /// Use for endpoints that return `204 No Content` or other non-JSON
+    /// responses (e.g. `DELETE` requests).
+    ///
     /// # Errors
     ///
-    /// Returns [`ZoteroApiError::LocalApi`]/[`ZoteroApiError::VersionConflict`]
-    /// if the response status is not 2xx, or [`ZoteroApiError::Network`] if
-    /// the request fails.
+    /// - [`LocalApi`] if Zotero returns a non-2xx status
+    /// - [`VersionConflict`] if Zotero rejects a stale write
+    /// - [`Network`] if the request fails
+    ///
+    /// [`LocalApi`]: ZoteroApiError::LocalApi
+    /// [`VersionConflict`]: ZoteroApiError::VersionConflict
+    /// [`Network`]: ZoteroApiError::Network
     #[inline]
     pub async fn send_unit(&self) -> Result<(), ZoteroApiError> {
         ensure_success(self.send_raw().await?).await?;
@@ -608,15 +723,15 @@ impl<'a> ApiRequestBuilder<'a> {
     }
 }
 
-/// Computes an exponential backoff delay in milliseconds for retry `attempt`
+/// Computes exponential backoff delay in milliseconds for `attempt`
 /// (1-indexed): 200ms, 400ms, 800ms, ...
 fn retry_delay_ms(attempt: u32) -> u64 {
     200_u64.saturating_mul(1_u64 << attempt.saturating_sub(1).min(16))
 }
 
-/// Returns `resp` if its status is 2xx. Otherwise consumes the body as the
-/// error message and returns [`ZoteroApiError::VersionConflict`] for a `412`
-/// status, or [`ZoteroApiError::LocalApi`] for any other non-2xx status.
+/// Returns `resp` if its status is 2xx. Maps 412 to
+/// [`ZoteroApiError::VersionConflict`] and other non-2xx statuses to
+/// [`ZoteroApiError::LocalApi`].
 pub(super) async fn ensure_success(
     resp: reqwest::Response,
 ) -> Result<reqwest::Response, ZoteroApiError> {
@@ -634,8 +749,7 @@ pub(super) async fn ensure_success(
     })
 }
 
-/// Returns the first element of `data`, or a `500 "Created {kind} array was
-/// empty"` [`ZoteroApiError::LocalApi`] if it is empty.
+/// Returns the first element of `data`, or a 500 error if the array is empty.
 pub(super) fn first_created<T>(
     data: Vec<T>,
     kind: &str,
@@ -646,8 +760,7 @@ pub(super) fn first_created<T>(
     })
 }
 
-/// Appends `start` and `limit` query parameters to `url`, preserving any
-/// existing query string.
+/// Appends `start` and `limit` query parameters to `url`.
 pub(super) fn add_pagination(url: &str, start: usize, limit: usize) -> String {
     let sep = if url.contains('?') {
         '&'
@@ -658,9 +771,11 @@ pub(super) fn add_pagination(url: &str, start: usize, limit: usize) -> String {
 }
 
 /// Decodes `resp`'s JSON body as `T`, or calls `refetch` if the body is empty
-/// or undecodable — Zotero's Local API returns an empty body on a successful
-/// single-object `PATCH`/`PUT`, so every version-guarded update must refetch
-/// the object to return its current representation.
+/// or undecodable.
+///
+/// Zotero's Local API returns an empty body on successful single-object
+/// `PATCH`/`PUT`, so this function refetches the object to return its current
+/// representation.
 pub(super) async fn decode_or_refetch<T, F, Fut>(
     resp: reqwest::Response,
     refetch: F,
@@ -947,7 +1062,7 @@ pub mod test_http {
 
     /// # Errors
     ///
-    /// Returns an error if the request body is not valid JSON.
+    /// - [`serde_json::Error`] if the request body is not valid JSON
     #[inline]
     pub fn request_body(
         raw: &str,

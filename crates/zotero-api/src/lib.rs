@@ -1,10 +1,10 @@
-//! Domain library for the Zotero Local API, Better `BibTeX`, and Better
+//! Async client and types for the Zotero Local API, Better `BibTeX`, and Better
 //! Notes.
 //!
-//! `zotero-api` provides strongly-typed, async Rust abstractions for inspecting
-//! and mutating local Zotero reference management libraries. It supports the
-//! HTTP Local API, Better `BibTeX` export engine, Better Notes companion
-//! plugin, and local `SQLite` database access.
+//! `zotero-api` provides typed, async Rust abstractions for inspecting and
+//! mutating local Zotero reference management libraries via the HTTP Local API,
+//! Better `BibTeX` export engine, Better Notes companion plugin, and read-only
+//! `SQLite` database access.
 //!
 //! # Main Components
 //!
@@ -14,19 +14,44 @@
 //!   keys, JSON-RPC auto-export, Aux scanning).
 //! - [`BetterNotesClient`]: Client for the Better Notes plugin (Markdown
 //!   conversion, note exporting).
-//! - [`LocalZoteroDb`]: Direct read-only `SQLite` database query interface.
+//! - `LocalZoteroDb` (behind the `sqlite` feature): Direct read-only `SQLite`
+//!   database query interface.
+//!
+//! # Features
+//!
+//! | Feature     | Description                                             |
+//! | ----------- | ------------------------------------------------------- |
+//! | `metadata`  | Enables metadata resolution from public identifiers.    |
+//! | `pdf`       | Enables PDF text and outline extraction.                |
+//! | `sqlite`    | Enables direct read-only `SQLite` access.               |
+//! | `test-util` | Exposes test helpers and fixtures for downstream tests. |
+//! | `full`      | Enables all optional features.                          |
+//!
 //! # Examples
 //!
-//! ```no_run
-//! use zotero_api::ZoteroClient;
+//! Check whether a local Zotero instance is reachable:
 //!
-//! # async fn run() -> Result<(), zotero_api::ZoteroApiError> {
+//! ```no_run
+//! use zotero_api::{ZoteroApiError, ZoteroClient};
+//!
+//! # async fn run() -> Result<(), ZoteroApiError> {
 //! let client = ZoteroClient::new("http://127.0.0.1:23119/api");
 //! let status = client.check_status().await;
 //! println!("Status online: {}", status.online);
 //! # Ok(())
 //! # }
 //! ```
+
+#![cfg_attr(
+    feature = "metadata",
+    doc = "\nWhen the `metadata` feature is enabled, [`resolve_metadata`] \
+           resolves DOI, arXiv, and ISBN identifiers."
+)]
+#![cfg_attr(
+    feature = "sqlite",
+    doc = "\nWhen the `sqlite` feature is enabled, [`LocalZoteroDb`] opens \
+           Zotero's local database in read-only mode."
+)]
 
 #[macro_use]
 mod macros;

@@ -1,25 +1,47 @@
-//! Crate-wide error type unifying failures across all backends.
+//! Unified error type for all Zotero API operations.
 //!
-//! [`ZoteroApiError`] is the unified error type returned by fallible operations
-//! in this crate, wrapping network transport failures, protocol errors,
-//! database access failures, permission denials, and serialization errors.
+//! [`ZoteroApiError`] wraps HTTP, network, serialization, and Zotero-specific
+//! errors into a single type returned by fallible operations in this crate.
 //!
 //! # Examples
 //!
-//! ```
+//! ```rust
 //! use zotero_api::ZoteroApiError;
 //!
-//! fn check_found(found: bool) -> Result<(), ZoteroApiError> {
-//!     if !found {
-//!         return Err(ZoteroApiError::NotFound("item missing".to_string()));
-//!     }
-//!     Ok(())
-//! }
+//! let err = ZoteroApiError::NotFound("item ABC12345".to_owned());
+//! assert!(matches!(err, ZoteroApiError::NotFound(_)));
 //! ```
 
 use thiserror::Error;
 
-/// Unified error type for all Zotero API and backend operations.
+/// Unified error type for all Zotero API operations.
+///
+/// Wraps HTTP, network, serialization, and Zotero-specific errors.
+///
+/// # Examples
+///
+/// ```rust
+/// use zotero_api::ZoteroApiError;
+///
+/// let result: Result<(), ZoteroApiError> =
+///     Err(ZoteroApiError::NotFound("item ABC12345".to_owned()));
+///
+/// match result {
+///     Err(ZoteroApiError::NotFound(id)) => {
+///         println!("not found: {id}")
+///     }
+///     Err(ZoteroApiError::VersionConflict(_)) => {
+///         println!("conflict, retry")
+///     }
+///     Err(ZoteroApiError::LocalApi {
+///         status,
+///         ..
+///     }) => {
+///         println!("HTTP {status}")
+///     }
+///     _ => {}
+/// }
+/// ```
 #[derive(Debug, Error)]
 #[non_exhaustive]
 pub enum ZoteroApiError {
@@ -27,7 +49,7 @@ pub enum ZoteroApiError {
     #[error("Network error: {0}")]
     Network(#[from] reqwest::Error),
 
-    /// Zotero Local HTTP API responded with a non-2xx status code.
+    /// Zotero Local API returned a non-2xx HTTP status.
     #[error("Local API error: HTTP {status} - {message}")]
     LocalApi {
         /// HTTP status code returned by the Zotero Local API.
@@ -36,12 +58,12 @@ pub enum ZoteroApiError {
         message: String,
     },
 
-    /// Zotero Local HTTP API rejected a write because the target object's
-    /// library version no longer matches the `If-Unmodified-Since-Version`
-    /// header sent with the request (HTTP `412 Precondition Failed`) —
-    /// another client modified the object concurrently since it was last
-    /// fetched. Callers should refetch the object's current version and
-    /// retry, or surface the conflict to the user.
+    /// Write rejected because the target object's library version no longer
+    /// matches the `If-Unmodified-Since-Version` header (HTTP 412).
+    ///
+    /// Another client modified the object since it was last fetched. Refetch
+    /// the object's current version and retry, or surface the conflict to the
+    /// user.
     #[error("Version conflict: {0}")]
     VersionConflict(String),
 
@@ -62,28 +84,29 @@ pub enum ZoteroApiError {
     #[error("Embedding error: {0}")]
     Embedding(String),
 
-    /// Input/output failure from [`std::io`].
+    /// I/O failure from [`std::io`].
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
 
     /// Local Zotero `SQLite` database could not be located or read.
     #[error("Local database error: {0}")]
     LocalDb(String),
-    /// `SQLite` query or connection against the local Zotero database failed.
+
+    /// `SQLite` query or connection failed. Requires the `sqlite` feature.
     #[cfg(feature = "sqlite")]
     #[error("SQLite error: {0}")]
     Sqlite(#[from] sqlx::Error),
 
-    /// Write operation attempted while write permission is disabled by the
-    /// embedding application's security policy.
+    /// Write operation rejected by the embedding application's security policy.
     #[error("Permission denied: {0}")]
     PermissionDenied(String),
 
-    /// User-controlled input failed local security policy.
+    /// User-controlled input failed local security policy validation.
     #[error("Input rejected: {0}")]
     InputRejected(String),
 
-    /// Requested Zotero library item, collection, or resource was not found.
+    /// Requested Zotero library item, collection, or resource was not found
+    /// (HTTP 404).
     #[error("Item not found: {0}")]
     NotFound(String),
 

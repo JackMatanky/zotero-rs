@@ -10,7 +10,10 @@ use crate::{
     types::{AnnotationType, ItemType},
 };
 
-/// Serialized Zotero annotation position payload.
+/// Opaque annotation position payload passed through to the Zotero API as-is.
+///
+/// The JSON structure varies by annotation type and is not interpreted by this
+/// crate. Construct via [`From<serde_json::Value>`].
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(transparent)]
 pub struct AnnotationPosition(serde_json::Value);
@@ -28,33 +31,39 @@ impl From<serde_json::Value> for AnnotationPosition {
     }
 }
 
-/// Payload for creating a PDF annotation.
+/// Payload for creating a PDF annotation via
+/// [`ZoteroClient::create_annotation`].
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct AnnotationDraft {
     /// Key of the parent PDF attachment item.
     pub parent_attachment_key: ItemKey,
     /// Annotation kind (`highlight`, `underline`, `note`, etc.).
     pub annotation_type: AnnotationType,
-    /// Optional highlighted or extracted text string.
+    /// Highlighted or extracted text string.
     pub text: Option<String>,
-    /// Optional user comment attached to the annotation.
+    /// User comment attached to the annotation.
     pub comment: Option<String>,
-    /// Optional CSS hex color string (e.g. `"#ffd400"`).
+    /// CSS hex color string (e.g. `"#ffd400"`). Defaults to `"#ffd400"`.
     pub color: Option<String>,
-    /// Optional PDF page label where the annotation appears.
+    /// PDF page label where the annotation appears.
     pub page_label: Option<String>,
-    /// Serialized annotation coordinates payload.
+    /// Serialized annotation coordinates. See [`AnnotationPosition`].
     pub position: AnnotationPosition,
 }
 
 impl ZoteroClient {
-    /// Creates an HTML note item attached to `parent_item_key` with body
-    /// `note_content`.
-    #[inline]
+    /// Creates an HTML note item attached to `parent_item_key`.
+    ///
+    /// `note_content` must be an HTML string (e.g. `"<p>Hello</p>"`).
+    ///
     /// # Errors
     ///
-    /// Returns [`ZoteroApiError::LocalApi`] if Zotero rejects the creation
-    /// request, or [`ZoteroApiError::Network`] if the request fails.
+    /// - [`LocalApi`] if Zotero rejects the request
+    /// - [`Network`] on connection failure
+    ///
+    /// [`LocalApi`]: ZoteroApiError::LocalApi
+    /// [`Network`]: ZoteroApiError::Network
+    #[inline]
     pub async fn create_note<K: AsRef<str>>(
         &self,
         parent_item_key: K,
@@ -71,12 +80,20 @@ impl ZoteroClient {
         crate::client::first_created(res.data, "note")
     }
 
-    /// Creates a PDF annotation item attached to a parent PDF attachment item.
-    #[inline]
+    /// Creates a PDF annotation item attached to a parent PDF attachment.
+    ///
+    /// The [`AnnotationDraft::position`] field must be a valid Zotero
+    /// annotation position JSON object matching the target PDF's coordinate
+    /// system.
+    ///
     /// # Errors
     ///
-    /// Returns [`ZoteroApiError::LocalApi`] if Zotero rejects the annotation
-    /// creation request, or [`ZoteroApiError::Network`] if the request fails.
+    /// - [`LocalApi`] if Zotero rejects the request
+    /// - [`Network`] on connection failure
+    ///
+    /// [`LocalApi`]: ZoteroApiError::LocalApi
+    /// [`Network`]: ZoteroApiError::Network
+    #[inline]
     pub async fn create_annotation(
         &self,
         draft: AnnotationDraft,
@@ -97,14 +114,24 @@ impl ZoteroClient {
         crate::client::first_created(res.data, "annotation")
     }
 
-    /// Extracts and synthesizes all annotations and notes attached to
-    /// `item_key` into Markdown.
-    #[inline]
+    /// Synthesizes all annotations and notes attached to `item_key` into
+    /// Markdown.
+    ///
+    /// Output structure:
+    /// - `# Annotations & Notes: {title}` heading with DOI and date metadata
+    /// - `## PDF Annotations` section with blockquoted highlights and comments
+    /// - `## Note Content` / `## Child Notes` sections with HTML note bodies
+    ///
     /// # Errors
     ///
-    /// Returns [`ZoteroApiError::NotFound`] if `item_key` does not exist, or
-    /// [`ZoteroApiError::LocalApi`]/[`ZoteroApiError::Network`] if fetching
-    /// parent or child items fails.
+    /// - [`NotFound`] if `item_key` does not exist
+    /// - [`LocalApi`] if Zotero returns a non-2xx status
+    /// - [`Network`] on connection failure
+    ///
+    /// [`NotFound`]: ZoteroApiError::NotFound
+    /// [`LocalApi`]: ZoteroApiError::LocalApi
+    /// [`Network`]: ZoteroApiError::Network
+    #[inline]
     pub async fn synthesize_annotations<K: AsRef<str>>(
         &self,
         item_key: K,
@@ -133,7 +160,8 @@ impl ZoteroClient {
     }
 }
 
-/// Formats PDF annotations attached to child items into a Markdown section.
+/// Formats PDF annotation children into a `## PDF Annotations` Markdown
+/// section.
 fn format_annotations_section(children: &[ZoteroItem]) -> String {
     use std::fmt::Write as _;
 
@@ -169,7 +197,7 @@ fn format_annotations_section(children: &[ZoteroItem]) -> String {
     section
 }
 
-/// Formats child notes and standalone item notes into a Markdown section.
+/// Formats standalone item notes and child note items into Markdown sections.
 fn format_notes_section(item: &ZoteroItem, children: &[ZoteroItem]) -> String {
     use std::fmt::Write as _;
 

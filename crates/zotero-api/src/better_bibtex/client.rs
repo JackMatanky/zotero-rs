@@ -14,6 +14,40 @@ use crate::{
 };
 
 /// Client for issuing JSON-RPC 2.0 requests to the Better `BibTeX` plugin.
+///
+/// The client talks to the local Better `BibTeX` HTTP endpoint exposed by
+/// Zotero, usually `http://127.0.0.1:23119/better-bibtex/json-rpc`. It can:
+///
+/// - map Zotero item keys to Better `BibTeX` citation keys
+/// - export items with a Better `BibTeX` translator
+/// - generate formatted bibliographies
+/// - regenerate citation keys
+/// - register Better `BibTeX` auto-export jobs
+/// - scan `LaTeX` `.aux` files for cited references
+/// - search Better `BibTeX` indexes
+/// - fetch Pandoc citeproc filter metadata
+///
+/// # Examples
+///
+/// ```rust,no_run
+/// # async fn run() -> Result<(), zotero_api::ZoteroApiError> {
+/// use zotero_api::{
+///     CitationKey,
+///     better_bibtex::{BetterBibtexClient, TranslatorName},
+/// };
+///
+/// let client = BetterBibtexClient::default();
+/// let output = client
+///     .export_items(
+///         &[CitationKey::from("doe2020")],
+///         &TranslatorName::from("Better BibTeX"),
+///     )
+///     .await?;
+///
+/// assert!(output.contains("doe2020"));
+/// # Ok(())
+/// # }
+/// ```
 #[derive(Clone, Debug)]
 pub struct BetterBibtexClient {
     http: reqwest::Client,
@@ -29,6 +63,8 @@ impl Default for BetterBibtexClient {
 
 impl BetterBibtexClient {
     /// Creates a new [`BetterBibtexClient`] with the specified base URL.
+    ///
+    /// An empty `base_url` falls back to the local Better `BibTeX` default.
     #[inline]
     pub fn new<S: Into<String>>(base_url: S) -> Self {
         let base_url = base_url.into();
@@ -51,11 +87,16 @@ impl BetterBibtexClient {
     }
 
     /// Maps Zotero `item_keys` to their current Better `BibTeX` citation keys.
-    #[inline]
+    ///
     /// # Errors
     ///
-    /// Returns [`ZoteroApiError::BetterBibTeX`] if the JSON-RPC call fails or
-    /// returns an RPC error.
+    /// - [`BetterBibTeX`] if the JSON-RPC call fails or returns an RPC error
+    /// - [`Network`] if the HTTP request fails or the response body cannot be
+    ///   decoded
+    ///
+    /// [`BetterBibTeX`]: ZoteroApiError::BetterBibTeX
+    /// [`Network`]: ZoteroApiError::Network
+    #[inline]
     pub async fn get_citekeys(
         &self,
         item_keys: &[ItemKey],
@@ -65,11 +106,16 @@ impl BetterBibtexClient {
     }
 
     /// Exports items identified by `citekeys` formatted with `translator`.
-    #[inline]
+    ///
     /// # Errors
     ///
-    /// Returns [`ZoteroApiError::BetterBibTeX`] if the JSON-RPC call fails or
-    /// returns an RPC error.
+    /// - [`BetterBibTeX`] if the JSON-RPC call fails or returns an RPC error
+    /// - [`Network`] if the HTTP request fails or the response body cannot be
+    ///   decoded
+    ///
+    /// [`BetterBibTeX`]: ZoteroApiError::BetterBibTeX
+    /// [`Network`]: ZoteroApiError::Network
+    #[inline]
     pub async fn export_items(
         &self,
         citekeys: &[CitationKey],
@@ -80,12 +126,22 @@ impl BetterBibtexClient {
     }
 
     /// Generates a formatted bibliography string for `citekeys`.
-    #[inline]
+    ///
+    /// When `format` is [`None`], Better `BibTeX` uses its configured default
+    /// bibliography output. Pass [`BibliographyFormat`] to choose the content
+    /// type, CSL style, locale, or quick-copy behavior for this call.
+    ///
     /// # Errors
     ///
-    /// Returns [`ZoteroApiError::BetterBibTeX`] if the JSON-RPC call fails or
-    /// returns an RPC error, or [`ZoteroApiError::Json`] if `citekeys`/`format`
-    /// cannot be serialized.
+    /// - [`BetterBibTeX`] if the JSON-RPC call fails or returns an RPC error
+    /// - [`Json`] if `citekeys` or `format` cannot be serialized
+    /// - [`Network`] if the HTTP request fails or the response body cannot be
+    ///   decoded
+    ///
+    /// [`BetterBibTeX`]: ZoteroApiError::BetterBibTeX
+    /// [`Json`]: ZoteroApiError::Json
+    /// [`Network`]: ZoteroApiError::Network
+    #[inline]
     pub async fn bibliography(
         &self,
         citekeys: &[CitationKey],
@@ -99,11 +155,16 @@ impl BetterBibtexClient {
     }
 
     /// Triggers citation key regeneration for `citekeys`.
-    #[inline]
+    ///
     /// # Errors
     ///
-    /// Returns [`ZoteroApiError::BetterBibTeX`] if the JSON-RPC call fails or
-    /// returns an RPC error.
+    /// - [`BetterBibTeX`] if the JSON-RPC call fails or returns an RPC error
+    /// - [`Network`] if the HTTP request fails or the response body cannot be
+    ///   decoded
+    ///
+    /// [`BetterBibTeX`]: ZoteroApiError::BetterBibTeX
+    /// [`Network`]: ZoteroApiError::Network
+    #[inline]
     pub async fn regenerate_keys(
         &self,
         citekeys: &[CitationKey],
@@ -113,12 +174,24 @@ impl BetterBibtexClient {
     }
 
     /// Registers a new automatic export task in the Better `BibTeX` plugin.
-    #[inline]
+    ///
+    /// Set [`AutoExportAddRequest::replace`] to [`Some`] to send the Better
+    /// `BibTeX` `replace` flag. `Some(true)` replaces an existing matching
+    /// auto-export configuration. `Some(false)` asks Better `BibTeX` not to
+    /// replace one. [`None`] omits the flag and leaves the plugin default in
+    /// control.
+    ///
     /// # Errors
     ///
-    /// Returns [`ZoteroApiError::BetterBibTeX`] if the JSON-RPC call fails or
-    /// returns an RPC error, or [`ZoteroApiError::Json`] if `request` fields
-    /// cannot be serialized.
+    /// - [`BetterBibTeX`] if the JSON-RPC call fails or returns an RPC error
+    /// - [`Json`] if `request` fields cannot be serialized
+    /// - [`Network`] if the HTTP request fails or the response body cannot be
+    ///   decoded
+    ///
+    /// [`BetterBibTeX`]: ZoteroApiError::BetterBibTeX
+    /// [`Json`]: ZoteroApiError::Json
+    /// [`Network`]: ZoteroApiError::Network
+    #[inline]
     pub async fn autoexport_add(
         &self,
         request: &AutoExportAddRequest,
@@ -141,13 +214,22 @@ impl BetterBibtexClient {
         self.call_rpc("autoexport.add", params).await
     }
 
-    /// Scans a `LaTeX` `.aux` file at `aux_path` and imports cited references
-    /// into `collection`.
-    #[inline]
+    /// Scans a `LaTeX` `.aux` file and imports cited references into
+    /// `collection`.
+    ///
+    /// Better `BibTeX` reads `\citation{...}` entries from the `.aux` file at
+    /// `aux_path`, resolves the citation keys, and adds matching Zotero items
+    /// to `collection`.
+    ///
     /// # Errors
     ///
-    /// Returns [`ZoteroApiError::BetterBibTeX`] if the JSON-RPC call fails or
-    /// returns an RPC error.
+    /// - [`BetterBibTeX`] if the JSON-RPC call fails or returns an RPC error
+    /// - [`Network`] if the HTTP request fails or the response body cannot be
+    ///   decoded
+    ///
+    /// [`BetterBibTeX`]: ZoteroApiError::BetterBibTeX
+    /// [`Network`]: ZoteroApiError::Network
+    #[inline]
     pub async fn scan_aux(
         &self,
         collection: &CollectionPath,
@@ -158,11 +240,16 @@ impl BetterBibtexClient {
     }
 
     /// Executes a search query string against Better `BibTeX` library indexes.
-    #[inline]
+    ///
     /// # Errors
     ///
-    /// Returns [`ZoteroApiError::BetterBibTeX`] if the JSON-RPC call fails or
-    /// returns an RPC error.
+    /// - [`BetterBibTeX`] if the JSON-RPC call fails or returns an RPC error
+    /// - [`Network`] if the HTTP request fails or the response body cannot be
+    ///   decoded
+    ///
+    /// [`BetterBibTeX`]: ZoteroApiError::BetterBibTeX
+    /// [`Network`]: ZoteroApiError::Network
+    #[inline]
     pub async fn search(
         &self,
         query: &SearchQuery,
@@ -172,11 +259,16 @@ impl BetterBibtexClient {
     }
 
     /// Fetches Pandoc citeproc filter metadata for `citekeys`.
-    #[inline]
+    ///
     /// # Errors
     ///
-    /// Returns [`ZoteroApiError::BetterBibTeX`] if the JSON-RPC call fails or
-    /// returns an RPC error.
+    /// - [`BetterBibTeX`] if the JSON-RPC call fails or returns an RPC error
+    /// - [`Network`] if the HTTP request fails or the response body cannot be
+    ///   decoded
+    ///
+    /// [`BetterBibTeX`]: ZoteroApiError::BetterBibTeX
+    /// [`Network`]: ZoteroApiError::Network
+    #[inline]
     pub async fn pandoc_filter(
         &self,
         citekeys: &[CitationKey],
@@ -186,6 +278,17 @@ impl BetterBibtexClient {
         self.call_rpc("item.pandoc_filter", params).await
     }
 
+    /// Sends a JSON-RPC request and decodes the typed result payload.
+    ///
+    /// # Errors
+    ///
+    /// - [`BetterBibTeX`] if Better `BibTeX` returns a non-success HTTP status,
+    ///   an unsupported JSON-RPC version, an RPC error object, or no result
+    /// - [`Network`] if the HTTP request fails or the response body cannot be
+    ///   decoded
+    ///
+    /// [`BetterBibTeX`]: ZoteroApiError::BetterBibTeX
+    /// [`Network`]: ZoteroApiError::Network
     async fn call_rpc<P: Serialize, R: serde::de::DeserializeOwned>(
         &self,
         method: &str,

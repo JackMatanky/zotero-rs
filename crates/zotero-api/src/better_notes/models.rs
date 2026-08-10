@@ -1,4 +1,4 @@
-//! Response shapes returned by the Better Notes bridge's HTTP endpoints.
+//! Data models for Better Notes bridge requests and responses.
 //!
 //! This module defines serializable Rust data types for Better Notes requests
 //! and responses. These models cover note exporting, Markdown conversion,
@@ -42,21 +42,24 @@ string_newtype!(
      template name.",
 );
 
-/// Output format for Better Notes note export.
+/// Controls the output encoding for Better Notes note export.
+///
+/// The format is serialized as the lowercase value expected by the bridge:
+/// `markdown` or `html`.
 #[derive(
     Copy, Clone, Debug, Default, Eq, PartialEq, Deserialize, Serialize,
 )]
 #[serde(rename_all = "lowercase")]
 pub enum NoteExportFormat {
-    /// Markdown format.
+    /// Export the note as Markdown text.
     #[default]
     Markdown,
-    /// HTML format.
+    /// Export the note as HTML text.
     Html,
 }
 
 impl NoteExportFormat {
-    /// Returns the lower-case string representation of the export format.
+    /// Returns the lowercase bridge parameter for this export format.
     #[must_use]
     #[inline]
     pub fn as_str(self) -> &'static str {

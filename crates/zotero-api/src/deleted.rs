@@ -10,7 +10,32 @@ use crate::{
     errors::ZoteroApiError,
 };
 
-/// Response object from `GET <prefix>/deleted?since=<version>`.
+/// Deleted object keys returned by Zotero's incremental sync protocol.
+///
+/// `GET /deleted?since=<version>` returns objects deleted after the supplied
+/// library version. Use the highest `Last-Modified-Version` seen from an
+/// earlier API response as the next `since` value, then remove the returned
+/// keys from local caches before applying newer object data.
+///
+/// The `since` parameter is exclusive: objects deleted at or before that
+/// version are not included.
+///
+/// # Examples
+///
+/// ```rust
+/// use zotero_api::DeletedObjectsResponse;
+///
+/// let deleted: DeletedObjectsResponse = serde_json::from_value(serde_json::json!({
+///     "collections": ["C1"],
+///     "items": ["I1", "I2"],
+///     "searches": [],
+///     "tags": ["obsolete"]
+/// }))?;
+///
+/// assert_eq!(deleted.collections, ["C1"]);
+/// assert_eq!(deleted.items, ["I1", "I2"]);
+/// # Ok::<(), serde_json::Error>(())
+/// ```
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq, Default)]
 pub struct DeletedObjectsResponse {
     /// Deleted collection keys.
@@ -28,13 +53,23 @@ pub struct DeletedObjectsResponse {
 }
 
 impl ZoteroClient {
-    /// Retrieves deleted library objects (items, collections, searches, tags)
-    /// since `since`.
-    #[inline]
+    /// Retrieves deleted library object keys after `since`.
+    ///
+    /// Zotero filters deletions by library version. Pass the last known
+    /// `Last-Modified-Version` value from a previous read or write response to
+    /// receive only later deletions. Store the newest `Last-Modified-Version`
+    /// from each sync response and use it for the next incremental sync call.
+    ///
     /// # Errors
     ///
-    /// Returns [`ZoteroApiError::LocalApi`]/[`ZoteroApiError::Network`]/
-    /// [`ZoteroApiError::Json`] if the request fails.
+    /// - [`LocalApi`] if Zotero returns a non-2xx status
+    /// - [`Network`] on connection failure
+    /// - [`Json`] if the response cannot be deserialized
+    ///
+    /// [`LocalApi`]: ZoteroApiError::LocalApi
+    /// [`Network`]: ZoteroApiError::Network
+    /// [`Json`]: ZoteroApiError::Json
+    #[inline]
     pub async fn get_deleted<K: Into<u64>>(
         &self,
         since: K,

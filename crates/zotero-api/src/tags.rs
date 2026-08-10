@@ -10,13 +10,19 @@ use crate::{
 };
 
 impl ZoteroClient {
-    /// Lists all tag names present in the library, returning up to `limit` tag
-    /// strings.
-    #[inline]
+    /// Lists tag names present in the library, returning up to `limit` entries
+    /// as [`TagName`] wrappers.
+    ///
     /// # Errors
     ///
-    /// Returns [`ZoteroApiError::LocalApi`]/[`ZoteroApiError::Network`]/
-    /// [`ZoteroApiError::Json`] if tag array decoding fails.
+    /// - [`LocalApi`] if Zotero returns a non-2xx status
+    /// - [`Network`] on connection failure
+    /// - [`Json`] if the tag array cannot be decoded
+    ///
+    /// [`LocalApi`]: ZoteroApiError::LocalApi
+    /// [`Network`]: ZoteroApiError::Network
+    /// [`Json`]: ZoteroApiError::Json
+    #[inline]
     pub async fn list_tags(
         &self,
         limit: usize,
@@ -32,14 +38,22 @@ impl ZoteroClient {
             .collect())
     }
 
-    /// Batch-updates tags across multiple items by adding and removing tag
-    /// lists.
-    #[inline]
+    /// Adds and removes tags across multiple items in a single batch.
+    ///
+    /// Tags in `add_tags` are merged without duplicating existing entries. Tags
+    /// in `remove_tags` are removed by exact [`TagName`] match. Returns the
+    /// count of items updated.
+    ///
     /// # Errors
     ///
-    /// Returns [`ZoteroApiError::NotFound`] if any item key does not exist, or
-    /// [`ZoteroApiError::LocalApi`]/[`ZoteroApiError::Network`] if Zotero
-    /// rejects any item tag update.
+    /// - [`NotFound`] if any item key does not exist
+    /// - [`LocalApi`] if Zotero rejects the update
+    /// - [`Network`] on connection failure
+    ///
+    /// [`NotFound`]: ZoteroApiError::NotFound
+    /// [`LocalApi`]: ZoteroApiError::LocalApi
+    /// [`Network`]: ZoteroApiError::Network
+    #[inline]
     pub async fn batch_update_tags<K: AsRef<str>>(
         &self,
         item_keys: &[K],
@@ -61,13 +75,20 @@ impl ZoteroClient {
         Ok(count)
     }
 
-    /// Renames a tag from `old_tag` to `new_tag` across all matching items in
-    /// the library target.
-    #[inline]
+    /// Renames a tag across up to 100 items that have it.
+    ///
+    /// Searches for items tagged with `old_tag`, replaces that tag with
+    /// `new_tag`, and returns the number of items updated. Items beyond the
+    /// 100-item search limit are not renamed.
+    ///
     /// # Errors
     ///
-    /// Returns [`ZoteroApiError::LocalApi`]/[`ZoteroApiError::Network`] if
-    /// Zotero rejects any item tag update.
+    /// - [`LocalApi`] if Zotero rejects the update
+    /// - [`Network`] on connection failure
+    ///
+    /// [`LocalApi`]: ZoteroApiError::LocalApi
+    /// [`Network`]: ZoteroApiError::Network
+    #[inline]
     pub async fn rename_tag<K: AsRef<str>, V: AsRef<str>>(
         &self,
         old_tag: K,
@@ -92,12 +113,19 @@ impl ZoteroClient {
         Ok(count)
     }
 
-    /// Deletes up to 50 tag names from the entire library in a single request.
-    #[inline]
+    /// Deletes tags by exact name from the entire library.
+    ///
+    /// The Zotero API limits this to 50 tags per request. A version guard
+    /// prevents conflicting concurrent modifications.
+    ///
     /// # Errors
     ///
-    /// Returns [`ZoteroApiError::LocalApi`]/[`ZoteroApiError::Network`] if
-    /// Zotero rejects the deletion request.
+    /// - [`LocalApi`] if Zotero rejects the deletion
+    /// - [`Network`] on connection failure
+    ///
+    /// [`LocalApi`]: ZoteroApiError::LocalApi
+    /// [`Network`]: ZoteroApiError::Network
+    #[inline]
     pub async fn delete_tags<K: AsRef<str>>(
         &self,
         tags: &[K],

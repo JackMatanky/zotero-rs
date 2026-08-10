@@ -1,4 +1,4 @@
-//! Settings management API wrapper.
+//! Settings operations for the Zotero Local HTTP API.
 
 use std::collections::HashMap;
 
@@ -9,23 +9,38 @@ use crate::{
     errors::ZoteroApiError,
 };
 
-/// Setting entry payload for client configuration settings.
+/// Key-value setting payload returned by the Zotero settings API.
+///
+/// Zotero setting keys identify individual preferences or extension settings.
+/// The `value` field is JSON-typed because settings can be strings, booleans,
+/// numbers, arrays, or objects depending on the key.
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct SettingEntry {
     /// Setting key name.
     pub key: String,
-    /// Setting value payload.
+    /// Setting value as raw JSON.
     pub value: serde_json::Value,
 }
 
 impl ZoteroClient {
-    /// Fetches all configuration settings for the target library.
-    #[inline]
-    #[expect(clippy::else_if_without_else, reason = "fallback list handling")]
+    /// Fetches all settings for the target library.
+    ///
+    /// Returns a [`HashMap`] keyed by setting name. The Local API may return
+    /// settings either as an object keyed by setting name or as a list of
+    /// [`SettingEntry`] values. This method accepts both shapes and normalizes
+    /// them into one map.
+    ///
     /// # Errors
     ///
-    /// Returns [`ZoteroApiError::LocalApi`]/[`ZoteroApiError::Network`]/
-    /// [`ZoteroApiError::Json`] if the request fails.
+    /// - [`LocalApi`] if Zotero returns a non-2xx status
+    /// - [`Network`] on connection failure
+    /// - [`Json`] if the response cannot be deserialized
+    ///
+    /// [`LocalApi`]: ZoteroApiError::LocalApi
+    /// [`Network`]: ZoteroApiError::Network
+    /// [`Json`]: ZoteroApiError::Json
+    #[inline]
+    #[expect(clippy::else_if_without_else, reason = "fallback list handling")]
     pub async fn get_settings(
         &self,
     ) -> Result<HashMap<String, SettingEntry>, ZoteroApiError> {
@@ -50,12 +65,22 @@ impl ZoteroClient {
         Ok(result)
     }
 
-    /// Fetches a single setting entry by setting key name.
-    #[inline]
+    /// Fetches one setting by key.
+    ///
+    /// Requests `/settings/{key}` and returns a [`SettingEntry`]. If Zotero
+    /// returns only the setting value instead of a full setting object, the
+    /// requested key is paired with that JSON value.
+    ///
     /// # Errors
     ///
-    /// Returns [`ZoteroApiError::LocalApi`]/[`ZoteroApiError::Network`]/
-    /// [`ZoteroApiError::Json`] if the request fails.
+    /// - [`LocalApi`] if Zotero returns a non-2xx status
+    /// - [`Network`] on connection failure
+    /// - [`Json`] if the response cannot be deserialized
+    ///
+    /// [`LocalApi`]: ZoteroApiError::LocalApi
+    /// [`Network`]: ZoteroApiError::Network
+    /// [`Json`]: ZoteroApiError::Json
+    #[inline]
     pub async fn get_setting<K: AsRef<str>>(
         &self,
         key: K,
@@ -74,12 +99,21 @@ impl ZoteroClient {
         }
     }
 
-    /// Updates a setting value by key name.
-    #[inline]
+    /// Updates one setting value by key.
+    ///
+    /// Sends the JSON `value` to `/settings/{key}`. Zotero decides whether the
+    /// key can be created or updated. If the key does not exist or cannot be
+    /// written, the server response is returned as
+    /// [`ZoteroApiError::LocalApi`].
+    ///
     /// # Errors
     ///
-    /// Returns [`ZoteroApiError::LocalApi`]/[`ZoteroApiError::Network`] if
-    /// Zotero rejects the setting update.
+    /// - [`LocalApi`] if Zotero rejects the setting update
+    /// - [`Network`] on connection failure
+    ///
+    /// [`LocalApi`]: ZoteroApiError::LocalApi
+    /// [`Network`]: ZoteroApiError::Network
+    #[inline]
     pub async fn update_setting<K: AsRef<str>>(
         &self,
         key: K,

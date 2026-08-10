@@ -1,70 +1,63 @@
-//! Zotero object keys and library version identifiers.
+//! Strongly-typed identifiers for Zotero objects.
 //!
-//! Provides strongly-typed identifier newtypes ([`ItemKey`], [`CollectionKey`],
-//! [`TagName`], [`CitationKey`]) and library version counters
-//! ([`LibraryVersion`]) to ensure type safety across the Zotero domain layer.
-//!
-//! # Main Types
-//!
-//! - [`ItemKey`]: 8-character alphanumeric item identifier.
-//! - [`CollectionKey`]: 8-character alphanumeric collection identifier.
-//! - [`TagName`]: Tag name wrapper.
-//! - [`CitationKey`]: Citation key wrapper.
-//! - [`LibraryVersion`]: Library version counter.
+//! [`ItemKey`] and [`CollectionKey`] are 8-character alphanumeric keys that are
+//! structurally identical but semantically distinct, so the compiler rejects
+//! accidental transposition. [`TagName`] and [`CitationKey`] wrap plain strings
+//! for the same reason. [`LibraryVersion`] is a monotonically increasing
+//! counter used for [optimistic concurrency control](LibraryVersion#examples).
 //!
 //! # Examples
 //!
 //! ```
 //! use zotero_api::{CollectionKey, ItemKey};
 //!
-//! let item_key = ItemKey::from("ABC12345");
-//! assert_eq!(item_key.as_str(), "ABC12345");
-//!
-//! let collection_key = CollectionKey::from("COL12345");
-//! assert_eq!(collection_key.as_str(), "COL12345");
+//! let item = ItemKey::from("ABC12345");
+//! let col = CollectionKey::from("COL12345");
+//! assert_eq!(item.as_str(), "ABC12345");
+//! assert_eq!(col.as_str(), "COL12345");
 //! ```
 
 use serde::{Deserialize, Serialize};
 
 string_newtype!(
     pub ItemKey,
-    "Zotero item key: an 8-character alphanumeric identifier unique within a \
-     library. Distinct from [`CollectionKey`] to prevent the two from being \
-     transposed at call sites.",
+    "An 8-character alphanumeric key that identifies a Zotero item within a \
+     library. Structurally identical to [`CollectionKey`] but type-distinct \
+     to prevent accidental transposition.",
 );
 string_newtype!(
     pub CollectionKey,
-    "Zotero collection key: an 8-character alphanumeric identifier unique \
-     within a library. Distinct from [`ItemKey`] to prevent the two from \
-     being transposed at call sites.",
+    "An 8-character alphanumeric key that identifies a Zotero collection \
+     within a library. Structurally identical to [`ItemKey`] but type-distinct \
+     to prevent accidental transposition.",
 );
 string_newtype!(
     pub TagName,
-    "Zotero tag name: wrapper for tag name strings to prevent transposition \
-     with free-text query strings or keys.",
+    "A Zotero tag name, wrapped to prevent transposition with item keys or \
+     free-text query strings.",
 );
 string_newtype!(
     pub CitationKey,
-    "Zotero citation key: wrapper for citation keys to enforce type safety \
-     and key semantics across search and item metadata.",
+    "A Zotero citation key, wrapped to enforce type safety across search \
+     and item metadata.",
 );
 string_newtype!(
     pub(crate) RelationUri,
-    "Zotero relation URI: an item URI stored as a value in an item's \
-     `relations` map, of the form `http://zotero.org/users/0/items/{KEY}` or \
-     `http://zotero.org/groups/{ID}/items/{KEY}`. Bridges [`ItemKey`] and the \
-     URI strings Zotero writes for relations: [`From<&ItemKey>`](ItemKey) \
-     builds a `/users/0` URI on write, while \
-     [`ItemKey::try_from`](ItemKey) recovers the trailing key on read, \
-     regardless of the URI prefix.",
+    "A Zotero item relation URI of the form \
+     `http://zotero.org/users/0/items/{KEY}` or \
+     `http://zotero.org/groups/{ID}/items/{KEY}`. \
+     [`From<&ItemKey>`](ItemKey) builds a `/users/0` URI for writes; \
+     [`ItemKey::try_from`](ItemKey) recovers the trailing key on reads.",
 );
 
-/// Prefix used when constructing item relation URIs to write back to Zotero,
-/// matching the Local API's own `/users/0` namespace.
+/// Base URI for item relations in the Local API's `/users/0` namespace.
 const ITEM_RELATION_URI_BASE: &str = "http://zotero.org/users/0/items/";
 
-/// Error returned when a [`RelationUri`] does not carry a valid Zotero item
-/// key as its trailing URI segment.
+/// Error returned when a [`RelationUri`] does not contain a valid Zotero item
+/// key as its trailing segment.
+///
+/// The URI must end with `/items/` followed by exactly 8 ASCII-alphanumeric
+/// characters (e.g. `http://zotero.org/users/0/items/ABC12345`).
 #[derive(Debug)]
 pub(crate) struct RelationUriError;
 
@@ -75,6 +68,17 @@ impl From<&ItemKey> for RelationUri {
     }
 }
 
+/// Extracts an [`ItemKey`] from a `RelationUri`.
+///
+/// Accepts both user-library (`/users/0/items/{KEY}`) and group-library
+/// (`/groups/{ID}/items/{KEY}`) URI forms. The trailing segment must be exactly
+/// 8 ASCII-alphanumeric characters.
+///
+/// # Errors
+///
+/// - `RelationUriError` if the URI lacks an `/items/` segment
+/// - `RelationUriError` if the trailing key is not 8 ASCII-alphanumeric
+///   characters
 impl TryFrom<&RelationUri> for ItemKey {
     type Error = RelationUriError;
 
@@ -102,7 +106,24 @@ impl std::fmt::Display for RelationUriError {
     }
 }
 
-/// Zotero library version counter.
+/// A monotonically increasing library version counter for optimistic
+/// concurrency control.
+///
+/// Pass the current version in an `If-Unmodified-Since-Version` request header.
+/// If another client has modified the library since this version, the Zotero
+/// server responds with `412 Precondition Failed`. Re-fetch the current
+/// version before retrying the write.
+///
+/// # Examples
+///
+/// ```
+/// use zotero_api::LibraryVersion;
+///
+/// let v = LibraryVersion::from(42_u64);
+/// assert_eq!(v.as_u64(), 42);
+/// // Use as the If-Unmodified-Since-Version header value:
+/// assert_eq!(v.to_string(), "42");
+/// ```
 #[derive(
     Copy,
     Clone,
@@ -120,12 +141,14 @@ impl std::fmt::Display for RelationUriError {
 pub struct LibraryVersion(u64);
 
 impl LibraryVersion {
+    /// Wraps a raw `u64` version counter.
     #[inline]
     #[must_use]
     pub fn new(value: u64) -> Self {
         Self(value)
     }
 
+    /// Returns the underlying `u64` value.
     #[inline]
     #[must_use]
     pub fn as_u64(&self) -> u64 {

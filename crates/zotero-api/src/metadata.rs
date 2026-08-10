@@ -1,4 +1,34 @@
 //! Metadata resolution for DOI, arXiv ID, and ISBN imports.
+//!
+//! This module turns public identifiers into [`ItemDraft`] values that can be
+//! passed to Zotero item creation APIs. Each resolver calls the external
+//! metadata service for the identifier kind, extracts the fields Zotero needs,
+//! and leaves unsupported or missing fields at their [`Default`] values.
+//!
+//! | Identifier | API                        | Default base URL                  |
+//! | ---------- | -------------------------- | --------------------------------- |
+//! | DOI        | Crossref Works API         | `https://api.crossref.org`        |
+//! | arXiv      | Semantic Scholar Graph API | `https://api.semanticscholar.org` |
+//! | ISBN       | Open Library Books API     | `https://openlibrary.org`         |
+//!
+//! Use [`resolve_metadata`] for normal resolution against the default services.
+//! Use [`resolve_metadata_with_urls`] when tests or offline tools need local
+//! service doubles.
+//!
+//! # Examples
+//!
+//! ```no_run
+//! use zotero_api::{IdentifierKind, ZoteroApiError, resolve_metadata};
+//!
+//! # async fn run() -> Result<(), ZoteroApiError> {
+//! let http = reqwest::Client::new();
+//! let draft =
+//!     resolve_metadata(&http, IdentifierKind::Doi, "10.1038/nphys1170")
+//!         .await?;
+//! assert_eq!(draft.doi, "10.1038/nphys1170");
+//! # Ok(())
+//! # }
+//! ```
 
 use serde::Deserialize;
 
@@ -12,24 +42,61 @@ const DEFAULT_CROSSREF_URL: &str = "https://api.crossref.org";
 const DEFAULT_SEMANTIC_SCHOLAR_URL: &str = "https://api.semanticscholar.org";
 const DEFAULT_OPEN_LIBRARY_URL: &str = "https://openlibrary.org";
 
-/// Public identifier type accepted by [`resolve_metadata`].
+/// Public identifier type accepted by metadata resolution.
+///
+/// Choose the variant that matches the namespace of the identifier string:
+///
+/// - [`Doi`] for Digital Object Identifiers, such as `10.1000/xyz123`
+/// - [`Arxiv`] for arXiv identifiers, such as `2401.01234`
+/// - [`Isbn`] for ISBN-10 or ISBN-13 book identifiers
+///
+/// [`Doi`]: IdentifierKind::Doi
+/// [`Arxiv`]: IdentifierKind::Arxiv
+/// [`Isbn`]: IdentifierKind::Isbn
 #[derive(Copy, Clone, Debug, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum IdentifierKind {
-    /// Digital Object Identifier resolved via Crossref.
+    /// Resolve a Digital Object Identifier through Crossref.
     Doi,
-    /// arXiv identifier resolved via Semantic Scholar.
+    /// Resolve an arXiv identifier through Semantic Scholar.
     Arxiv,
-    /// International Standard Book Number resolved via Open Library.
+    /// Resolve an International Standard Book Number through Open Library.
     Isbn,
 }
 
-/// Resolves a public identifier against default metadata APIs.
-#[inline]
+/// Resolves a public identifier with the default metadata APIs.
+///
+/// This is the convenience wrapper for production callers. It uses the default
+/// base URLs listed in the module documentation and returns an [`ItemDraft`]
+/// populated with the metadata available from the selected service.
+///
+/// # Examples
+///
+/// ```rust,no_run
+/// use zotero_api::metadata::{IdentifierKind, resolve_metadata};
+///
+/// # async fn example() -> Result<(), zotero_api::ZoteroApiError> {
+/// let http = reqwest::Client::new();
+/// let draft =
+///     resolve_metadata(&http, IdentifierKind::Doi, "10.1038/nphys1170")
+///         .await?;
+/// assert_eq!(draft.doi, "10.1038/nphys1170");
+/// # Ok(())
+/// # }
+/// ```
+///
 /// # Errors
 ///
-/// Returns [`ZoteroApiError::NotFound`] if the identifier cannot be resolved by
-/// external services.
+/// - [`NotFound`] if the identifier cannot be resolved
+/// - [`LocalApi`] if the metadata API returns a non-success status
+/// - [`Network`] if the HTTP request fails
+/// - [`Json`] if the response cannot be decoded
+///
+/// [`NotFound`]: ZoteroApiError::NotFound
+/// [`LocalApi`]: ZoteroApiError::LocalApi
+/// [`Network`]: ZoteroApiError::Network
+/// [`Json`]: ZoteroApiError::Json
+#[inline]
 pub async fn resolve_metadata(
     http: &reqwest::Client,
     kind: IdentifierKind,
@@ -38,12 +105,24 @@ pub async fn resolve_metadata(
     resolve_metadata_with_urls(http, kind, id, None, None, None).await
 }
 
+/// Resolves a public identifier with optional metadata API base URL overrides.
+///
+/// Each `*_base` argument replaces the default service URL for its matching
+/// identifier kind. Pass [`None`] for services that should keep their default
+/// URL. This keeps tests small: a test can point only the service it exercises
+/// at a local mock server.
+///
 /// # Errors
 ///
-/// Returns [`ZoteroApiError::NotFound`] if the identifier cannot be resolved,
-/// or [`ZoteroApiError::LocalApi`]/[`ZoteroApiError::Network`]/
-/// [`ZoteroApiError::Json`] if the metadata API request fails. Resolves a
-/// public identifier against configurable metadata API endpoints.
+/// - [`NotFound`] if the identifier cannot be resolved
+/// - [`LocalApi`] if the metadata API returns a non-success status
+/// - [`Network`] if the HTTP request fails
+/// - [`Json`] if the response cannot be decoded
+///
+/// [`NotFound`]: ZoteroApiError::NotFound
+/// [`LocalApi`]: ZoteroApiError::LocalApi
+/// [`Network`]: ZoteroApiError::Network
+/// [`Json`]: ZoteroApiError::Json
 #[expect(
     clippy::too_many_arguments,
     reason = "five optional base-url overrides for offline testing; a params \

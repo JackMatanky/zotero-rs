@@ -11,7 +11,12 @@ use crate::{
     objects::ZoteroItem,
 };
 
-/// Searchable item field in structured searches.
+/// Item field targeted by a [`SearchCondition`].
+///
+/// Each variant maps to a Zotero item metadata field that can be matched in a
+/// structured search. [`Other`](Self::Other) accepts arbitrary field names for
+/// forward compatibility with fields not yet represented by a dedicated
+/// variant.
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum SearchField {
@@ -23,11 +28,24 @@ pub enum SearchField {
     Tag,
     Extra,
     Doi,
+    /// Custom field name not covered by the built-in variants.
     #[serde(untagged)]
     Other(String),
 }
 
-/// Comparison operator in structured searches.
+/// Comparison operator applied to a [`SearchField`] in a [`SearchCondition`].
+///
+/// String operators ([`Contains`](Self::Contains), [`Is`](Self::Is),
+/// [`StartsWith`](Self::StartsWith), [`EndsWith`](Self::EndsWith),
+/// [`IsNot`](Self::IsNot), [`DoesNotContain`](Self::DoesNotContain)) are
+/// case-insensitive. Numeric/date operators
+/// ([`IsGreaterThan`](Self::IsGreaterThan), [`IsLessThan`](Self::IsLessThan),
+/// [`IsBefore`](Self::IsBefore), [`IsAfter`](Self::IsAfter)) compare leading
+/// numeric components of date or year strings and only apply to date-typed
+/// fields.
+///
+/// [`Other`](Self::Other) is a catch-all for operators not yet represented by a
+/// dedicated variant.
 #[derive(Clone, Debug, Default, Eq, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum SearchOperator {
@@ -46,7 +64,11 @@ pub enum SearchOperator {
     Other(String),
 }
 
-/// Structured search condition matching a specific item field.
+/// A single search clause that pairs a [`SearchField`] with a
+/// [`SearchOperator`] and a comparison value.
+///
+/// The `value` is compared against the item field using the operator's
+/// semantics. For string operators the comparison is case-insensitive.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct SearchCondition {
     pub field: SearchField,
@@ -55,7 +77,10 @@ pub struct SearchCondition {
     pub value: String,
 }
 
-/// Logical combination mode for multiple search conditions.
+/// Logical combination mode when joining multiple [`SearchCondition`]s.
+///
+/// [`All`](Self::All) (the default) requires every condition to match (AND).
+/// [`Any`](Self::Any) requires at least one condition to match (OR).
 #[derive(
     Copy, Clone, Debug, Default, Eq, PartialEq, Deserialize, Serialize,
 )]
@@ -66,7 +91,8 @@ pub enum JoinMode {
     Any,
 }
 
-/// Item field used to order search results.
+/// Item field used to order search results returned by
+/// [`ZoteroClient::advanced_search`].
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum SortField {
@@ -77,7 +103,7 @@ pub enum SortField {
     Creator,
 }
 
-/// Direction for ordering search results.
+/// Sort direction applied to a [`SortField`].
 #[derive(
     Copy, Clone, Debug, Default, Eq, PartialEq, Deserialize, Serialize,
 )]
@@ -88,7 +114,10 @@ pub enum SortOrder {
     Desc,
 }
 
-/// Pagination metadata returned alongside search result pages.
+/// Pagination metadata for a single result page.
+///
+/// Returned alongside each [`SearchPage`] to indicate the requested window
+/// and the total number of matches.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PaginationInfo {
     pub limit: usize,
@@ -97,7 +126,8 @@ pub struct PaginationInfo {
     pub has_more: bool,
 }
 
-/// Paginated result container wrapping items and pagination metadata.
+/// Paginated result set containing one page of items and their
+/// [`PaginationInfo`].
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SearchPage<T> {
     pub items: Vec<T>,
@@ -105,12 +135,22 @@ pub struct SearchPage<T> {
 }
 
 impl ZoteroClient {
-    /// Searches items matching `query`, returning a paginated page.
-    #[inline]
+    /// Searches library items by free-text query, returning a paginated
+    /// [`SearchPage`].
+    ///
+    /// When `collection_key` is provided, results are scoped to that
+    /// collection. Notes are excluded from results.
+    ///
     /// # Errors
     ///
-    /// Returns [`ZoteroApiError::LocalApi`]/[`ZoteroApiError::Network`]/
-    /// [`ZoteroApiError::Json`] if the request fails.
+    /// - [`LocalApi`] if Zotero returns a non-2xx status
+    /// - [`Network`] on connection failure
+    /// - [`Json`] if the response cannot be deserialized
+    ///
+    /// [`LocalApi`]: ZoteroApiError::LocalApi
+    /// [`Network`]: ZoteroApiError::Network
+    /// [`Json`]: ZoteroApiError::Json
+    #[inline]
     pub async fn search_items<K: AsRef<str>>(
         &self,
         query: &str,
@@ -144,12 +184,20 @@ impl ZoteroClient {
         })
     }
 
-    /// Searches items tagged with `tag`.
-    #[inline]
+    /// Searches library items tagged with `tag`.
+    ///
+    /// Notes are excluded from results.
+    ///
     /// # Errors
     ///
-    /// Returns [`ZoteroApiError::LocalApi`]/[`ZoteroApiError::Network`]/
-    /// [`ZoteroApiError::Json`] if the request fails.
+    /// - [`LocalApi`] if Zotero returns a non-2xx status
+    /// - [`Network`] on connection failure
+    /// - [`Json`] if the response cannot be deserialized
+    ///
+    /// [`LocalApi`]: ZoteroApiError::LocalApi
+    /// [`Network`]: ZoteroApiError::Network
+    /// [`Json`]: ZoteroApiError::Json
+    #[inline]
     pub async fn search_by_tag<K: AsRef<str>>(
         &self,
         tag: K,
@@ -165,12 +213,22 @@ impl ZoteroClient {
         Ok(res.data)
     }
 
-    /// Searches items by native or `extra` field citation key.
-    #[inline]
+    /// Searches for a single item by its native or `extra`-field citation key.
+    ///
+    /// Returns `Ok(None)` when no item matches. The search is case-insensitive
+    /// and checks both the `citationKey` field and common `extra`-field
+    /// variants (`citation key:`, `citationkey:`).
+    ///
     /// # Errors
     ///
-    /// Returns [`ZoteroApiError::LocalApi`]/[`ZoteroApiError::Network`]/
-    /// [`ZoteroApiError::Json`] if the underlying search request fails.
+    /// - [`LocalApi`] if Zotero returns a non-2xx status
+    /// - [`Network`] on connection failure
+    /// - [`Json`] if the underlying search response cannot be deserialized
+    ///
+    /// [`LocalApi`]: ZoteroApiError::LocalApi
+    /// [`Network`]: ZoteroApiError::Network
+    /// [`Json`]: ZoteroApiError::Json
+    #[inline]
     pub async fn search_by_citation_key<K: AsRef<str>>(
         &self,
         citekey: K,
@@ -199,8 +257,8 @@ impl ZoteroClient {
     }
 }
 
-/// Wraps a server-fetched page, falling back to `offset + items.len()` when
-/// the server reports no total.
+/// Wraps server-fetched items into a [`SearchPage`], estimating the total
+/// from `server_total` or falling back to `offset + items.len()`.
 fn finish_page(
     items: Vec<ZoteroItem>,
     server_total: Option<usize>,
@@ -225,22 +283,29 @@ fn finish_page(
 }
 
 impl ZoteroClient {
-    /// Executes an advanced multi-condition structured search over item fields.
+    /// Executes a multi-condition structured search over item fields,
+    /// returning a paginated [`SearchPage`].
     ///
-    /// If `join_mode` is [`JoinMode::All`], `sort` is unset, and all conditions
-    /// can be pushed down to Zotero quick-search parameters, the search is
-    /// executed server-side. Otherwise the library is fetched and filtered
-    /// client-side.
+    /// When all conditions can be expressed as Zotero quick-search parameters
+    /// (AND join, no sort, compatible fields and operators), the search is
+    /// pushed down to the server. Otherwise the full library is fetched and
+    /// filtered client-side.
+    ///
+    /// # Errors
+    ///
+    /// - [`LocalApi`] if Zotero returns a non-2xx status
+    /// - [`Network`] on connection failure
+    /// - [`Json`] if an underlying response cannot be deserialized
+    ///
+    /// [`LocalApi`]: ZoteroApiError::LocalApi
+    /// [`Network`]: ZoteroApiError::Network
+    /// [`Json`]: ZoteroApiError::Json
     #[expect(
         clippy::too_many_arguments,
         reason = "six orthogonal search parameters; a params struct adds \
                   indirection without removing them"
     )]
     #[inline]
-    /// # Errors
-    ///
-    /// Returns [`ZoteroApiError::LocalApi`]/[`ZoteroApiError::Network`]/
-    /// [`ZoteroApiError::Json`] if the request fails.
     pub async fn advanced_search(
         &self,
         conditions: Vec<SearchCondition>,
@@ -366,7 +431,7 @@ mod query_builder {
     };
     use crate::objects::ZoteroItem;
 
-    /// Search condition prepared once for client-side scans.
+    /// Pre-evaluated search condition for efficient client-side matching.
     struct PreparedCondition<'a> {
         field: &'a SearchField,
         operator: &'a SearchOperator,
