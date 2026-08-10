@@ -9,17 +9,26 @@ use crate::{
     errors::ZoteroApiError,
 };
 
-/// Setting entry payload for client configuration settings.
+/// Key-value setting payload returned by the Zotero settings API.
+///
+/// Zotero setting keys identify individual preferences or extension settings.
+/// The `value` field is JSON-typed because settings can be strings, booleans,
+/// numbers, arrays, or objects depending on the key.
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct SettingEntry {
     /// Setting key name.
     pub key: String,
-    /// Setting value payload.
+    /// Setting value as raw JSON.
     pub value: serde_json::Value,
 }
 
 impl ZoteroClient {
-    /// Fetches all configuration settings for the target library.
+    /// Fetches all settings for the target library.
+    ///
+    /// Returns a [`HashMap`] keyed by setting name. The Local API may return
+    /// settings either as an object keyed by setting name or as a list of
+    /// [`SettingEntry`] values. This method accepts both shapes and normalizes
+    /// them into one map.
     ///
     /// # Errors
     ///
@@ -56,7 +65,11 @@ impl ZoteroClient {
         Ok(result)
     }
 
-    /// Fetches a single setting entry by setting key name.
+    /// Fetches one setting by key.
+    ///
+    /// Requests `/settings/{key}` and returns a [`SettingEntry`]. If Zotero
+    /// returns only the setting value instead of a full setting object, the
+    /// requested key is paired with that JSON value.
     ///
     /// # Errors
     ///
@@ -86,7 +99,12 @@ impl ZoteroClient {
         }
     }
 
-    /// Updates a setting value by key name.
+    /// Updates one setting value by key.
+    ///
+    /// Sends the JSON `value` to `/settings/{key}`. Zotero decides whether the
+    /// key can be created or updated. If the key does not exist or cannot be
+    /// written, the server response is returned as
+    /// [`ZoteroApiError::LocalApi`].
     ///
     /// # Errors
     ///
