@@ -30,6 +30,6 @@ mod models;
 pub use client::BetterBibtexClient;
 pub use models::{
     AutoExportAddRequest, AuxFilePath, BibliographyContentType,
-    BibliographyFormat, CollectionPath, CslStyleId, Locale, SearchQuery,
-    TranslatorName,
+    BibliographyFormat, CitationKey, CollectionPath, CslStyleId, Locale,
+    SearchQuery, TranslatorName,
 };

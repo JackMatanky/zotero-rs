@@ -5,12 +5,12 @@ use serde_json::{Value, json};
 
 use crate::{
     better_bibtex::models::{
-        AutoExportAddRequest, AuxFilePath, BibliographyFormat, CitekeyMap,
-        CollectionPath, JsonRpcRequest, JsonRpcResponse, RegenerateKeyMap,
-        SearchQuery, TranslatorName,
+        AutoExportAddRequest, AuxFilePath, BibliographyFormat, CitationKey,
+        CitekeyMap, CollectionPath, JsonRpcRequest, JsonRpcResponse,
+        RegenerateKeyMap, SearchQuery, TranslatorName,
     },
     errors::ZoteroApiError,
-    keys::{CitationKey, ItemKey},
+    keys::ItemKey,
 };
 
 /// Client for issuing JSON-RPC 2.0 requests to the Better `BibTeX` plugin.

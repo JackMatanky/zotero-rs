@@ -2,9 +2,9 @@
 //!
 //! [`ItemKey`] and [`CollectionKey`] are 8-character alphanumeric keys that are
 //! structurally identical but semantically distinct, so the compiler rejects
-//! accidental transposition. [`TagName`] and [`CitationKey`] wrap plain strings
-//! for the same reason. [`LibraryVersion`] is a monotonically increasing
-//! counter used for [optimistic concurrency control](LibraryVersion#examples).
+//! accidental transposition. [`TagName`] wraps a plain string for the same
+//! reason. [`LibraryVersion`] is a monotonically increasing counter used for
+//! [optimistic concurrency control](LibraryVersion#examples).
 //!
 //! # Examples
 //!
@@ -35,11 +35,6 @@ string_newtype!(
     pub TagName,
     "A Zotero tag name, wrapped to prevent transposition with item keys or \
      free-text query strings.",
-);
-string_newtype!(
-    pub CitationKey,
-    "A Zotero citation key, wrapped to enforce type safety across search \
-     and item metadata.",
 );
 
 /// A monotonically increasing library version counter for optimistic

@@ -84,8 +84,8 @@ pub use analysis::{
 };
 pub use better_bibtex::{
     AutoExportAddRequest, AuxFilePath, BetterBibtexClient,
-    BibliographyContentType, BibliographyFormat, CollectionPath, CslStyleId,
-    Locale, SearchQuery, TranslatorName,
+    BibliographyContentType, BibliographyFormat, CitationKey, CollectionPath,
+    CslStyleId, Locale, SearchQuery, TranslatorName,
 };
 pub use better_notes::{BetterNotesClient, NoteExportFormat, TemplateName};
 pub use client::{LibraryTarget, LocalAuthResponse, ZoteroClient};
@@ -93,7 +93,7 @@ pub use collections::CollectionItemAction;
 pub use deleted::DeletedObjectsResponse;
 pub use errors::ZoteroApiError;
 pub use items::TrashAction;
-pub use keys::{CitationKey, CollectionKey, ItemKey, LibraryVersion, TagName};
+pub use keys::{CollectionKey, ItemKey, LibraryVersion, TagName};
 #[cfg(feature = "metadata")]
 pub use metadata::{
     IdentifierKind, resolve_metadata, resolve_metadata_with_urls,
