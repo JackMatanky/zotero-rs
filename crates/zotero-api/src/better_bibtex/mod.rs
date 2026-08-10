@@ -1,8 +1,9 @@
-//! Bridge to the Better `BibTeX` Zotero plugin JSON-RPC API.
+//! Better BibTeX integration for Zotero.
 //!
-//! Provides [`BetterBibtexClient`] for issuing RPC requests to an active Better
-//! `BibTeX` extension running inside Zotero.
-//! See [`BetterBibtexClient`] for example usage.
+//! This module provides [`BetterBibtexClient`], a JSON-RPC 2.0 client for the
+//! Better BibTeX Zotero plugin. It supports citation-key lookup, item export,
+//! bibliography generation, AUX scanning, search, Pandoc metadata, and
+//! auto-export registration.
 
 mod client;
 mod models;
