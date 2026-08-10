@@ -18,8 +18,9 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    keys::{CollectionKey, ItemKey, LibraryVersion, TagName},
+    keys::{CollectionKey, ItemKey, TagName},
     types::{CollectionParent, CreatorType, ItemType, LinkMode, TagOrigin},
+    version::LibraryVersion,
 };
 
 /// Response returned by batch create and update operations.

@@ -268,7 +268,7 @@ mod tests {
 
     mod annotations {
         use super::*;
-        use crate::{keys::LibraryVersion, objects::ZoteroItemData};
+        use crate::{objects::ZoteroItemData, version::LibraryVersion};
 
         mod formatting {
             use pretty_assertions::assert_eq;

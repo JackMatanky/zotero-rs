@@ -23,8 +23,8 @@ use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 use crate::{
     errors::ZoteroApiError,
-    keys::LibraryVersion,
     objects::{LocalApiStatus, ZoteroItem},
+    version::LibraryVersion,
 };
 
 /// Wraps an API response payload with Zotero response headers.

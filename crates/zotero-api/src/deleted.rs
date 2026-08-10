@@ -90,7 +90,7 @@ mod tests {
     use super::*;
     use crate::{
         client::test_http::{MockServer, http_response},
-        keys::LibraryVersion,
+        version::LibraryVersion,
     };
 
     #[tokio::test]

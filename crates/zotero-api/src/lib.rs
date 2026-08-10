@@ -78,6 +78,7 @@ pub(crate) mod settings;
 pub mod sqlite;
 pub(crate) mod tags;
 pub(crate) mod types;
+pub(crate) mod version;
 
 pub use analysis::{
     DuplicateGroup, DuplicateType, LibraryCoverage, LibraryCoveragePage,
@@ -93,7 +94,7 @@ pub use collections::CollectionItemAction;
 pub use deleted::DeletedObjectsResponse;
 pub use errors::ZoteroApiError;
 pub use items::TrashAction;
-pub use keys::{CollectionKey, ItemKey, LibraryVersion, TagName};
+pub use keys::{CollectionKey, ItemKey, TagName};
 #[cfg(feature = "metadata")]
 pub use metadata::{
     IdentifierKind, resolve_metadata, resolve_metadata_with_urls,
@@ -120,3 +121,4 @@ pub use types::{
     AnnotationType, CollectionParent, CreatorType, ItemType, LinkMode,
     TagOrigin,
 };
+pub use version::LibraryVersion;

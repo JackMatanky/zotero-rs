@@ -5,8 +5,8 @@ use serde::{Deserialize, Serialize};
 use crate::{
     client::{ZoteroClient, ZoteroResponse},
     errors::ZoteroApiError,
-    keys::LibraryVersion,
     objects::{BatchWriteResponse, ZoteroItem},
+    version::LibraryVersion,
 };
 
 /// A saved search that stores query conditions server-side.
