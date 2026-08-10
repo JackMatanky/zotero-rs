@@ -113,6 +113,13 @@ impl ItemLinks {
             _ => None,
         }
     }
+
+    /// Borrows the `href` URL string of the named link, if present.
+    #[must_use]
+    #[inline]
+    pub fn href(&self, key: &str) -> Option<&str> {
+        self.get(key)?.get("href")?.as_str()
+    }
 }
 
 /// Metadata counter envelope in Zotero API responses.
@@ -533,6 +540,41 @@ mod tests {
             assert_eq!(data.doi.as_deref(), Some("10.1234/example"));
             assert_eq!(data.isbn.as_deref(), Some("978-0-13-468599-1"));
             assert_eq!(data.issn.as_deref(), Some("1234-5678"));
+        }
+    }
+
+    mod item_links {
+        use pretty_assertions::assert_eq;
+
+        use super::*;
+
+        fn links_with_enclosure_href(href: &str) -> ItemLinks {
+            ItemLinks {
+                self_link: None,
+                alternate: None,
+                enclosure: Some(serde_json::json!({"href": href})),
+            }
+        }
+
+        #[test]
+        fn href_returns_enclosure_url() {
+            let links = links_with_enclosure_href("file:///tmp/paper.pdf");
+
+            assert_eq!(links.href("enclosure"), Some("file:///tmp/paper.pdf"));
+        }
+
+        #[test]
+        fn href_returns_none_for_unset_link() {
+            let links = links_with_enclosure_href("file:///tmp/paper.pdf");
+
+            assert_eq!(links.href("self"), None);
+        }
+
+        #[test]
+        fn href_returns_none_for_unknown_key() {
+            let links = links_with_enclosure_href("file:///tmp/paper.pdf");
+
+            assert_eq!(links.href("missing"), None);
         }
     }
 }

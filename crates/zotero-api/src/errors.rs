@@ -36,6 +36,15 @@ pub enum ZoteroApiError {
         message: String,
     },
 
+    /// Zotero Local HTTP API rejected a write because the target object's
+    /// library version no longer matches the `If-Unmodified-Since-Version`
+    /// header sent with the request (HTTP `412 Precondition Failed`) —
+    /// another client modified the object concurrently since it was last
+    /// fetched. Callers should refetch the object's current version and
+    /// retry, or surface the conflict to the user.
+    #[error("Version conflict: {0}")]
+    VersionConflict(String),
+
     /// Better `BibTeX` JSON-RPC endpoint returned an error or invalid response.
     #[error("Better BibTeX error: {0}")]
     BetterBibTeX(String),

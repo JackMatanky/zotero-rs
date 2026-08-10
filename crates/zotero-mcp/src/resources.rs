@@ -47,7 +47,7 @@ use rmcp::model::{
     GetPromptResult, PromptMessage, ReadResourceResult, ResourceContents, Role,
 };
 use serde::Serialize;
-use zotero_api::{CollectionKey, ItemKey, ZoteroApiError, ZoteroClient};
+use zotero_api::{CollectionKey, ItemKey, ZoteroClient};
 
 use crate::ZoteroMcpServer;
 
@@ -453,18 +453,8 @@ async fn read_collection_resource(
 
     let collection_key = CollectionKey::from(rest);
     client
-        .get_collections()
+        .get_collection(&collection_key)
         .await
-        .and_then(|collections| {
-            collections
-                .into_iter()
-                .find(|collection| collection.key == collection_key.as_str())
-                .ok_or_else(|| {
-                    ZoteroApiError::NotFound(format!(
-                        "Collection {collection_key}"
-                    ))
-                })
-        })
         .map(|collection| json_resource(uri, &collection))
         .map_err(resource_error)
 }
@@ -746,21 +736,14 @@ mod tests {
         #[tokio::test]
         async fn read_resource_returns_collection_json_content() {
             // Arrange
-            let collections = json!([
-                {
-                    "key": "COL1",
-                    "version": 1,
-                    "data": { "key": "COL1", "name": "Physics", "parentCollection": false }
-                },
-                {
-                    "key": "COL2",
-                    "version": 1,
-                    "data": { "key": "COL2", "name": "Chemistry", "parentCollection": false }
-                }
-            ]);
+            let collection = json!({
+                "key": "COL2",
+                "version": 1,
+                "data": { "key": "COL2", "name": "Chemistry", "parentCollection": false }
+            });
             let base = mock_server(vec![http_response(
                 "200 OK",
-                &collections.to_string(),
+                &collection.to_string(),
             )]);
             let server = ZoteroMcpServer::new(zotero_state(base));
 

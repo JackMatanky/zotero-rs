@@ -1,10 +1,10 @@
-//! Domain library for the Zotero Local API, Better `BibTeX`, Better Notes, and
-//! semantic search.
+//! Domain library for the Zotero Local API, Better `BibTeX`, and Better
+//! Notes.
 //!
 //! `zotero-api` provides strongly-typed, async Rust abstractions for inspecting
 //! and mutating local Zotero reference management libraries. It supports the
 //! HTTP Local API, Better `BibTeX` export engine, Better Notes companion
-//! plugin, local `SQLite` database access, and vector semantic search.
+//! plugin, and local `SQLite` database access.
 //!
 //! # Main Components
 //!
@@ -15,8 +15,6 @@
 //! - [`BetterNotesClient`]: Client for the Better Notes plugin (Markdown
 //!   conversion, note exporting).
 //! - [`LocalZoteroDb`]: Direct read-only `SQLite` database query interface.
-//! - [`SemanticIndex`]: Local vector embedding index for note and annotation
-//!   similarity search.
 //! # Examples
 //!
 //! ```no_run
@@ -35,7 +33,6 @@ mod macros;
 pub(crate) mod analysis;
 pub mod better_bibtex;
 pub mod better_notes;
-pub(crate) mod bibtex;
 pub mod client;
 pub(crate) mod collections;
 pub(crate) mod deleted;
@@ -66,7 +63,6 @@ pub use better_bibtex::{
     Locale, SearchQuery, TranslatorName,
 };
 pub use better_notes::{BetterNotesClient, NoteExportFormat, TemplateName};
-pub use bibtex::{item_to_bibtex, items_to_bibtex};
 pub use client::{LibraryTarget, LocalAuthResponse, ZoteroClient};
 pub use collections::CollectionItemAction;
 pub use deleted::DeletedObjectsResponse;
@@ -86,9 +82,8 @@ pub use objects::{
 pub use pdf::*;
 pub use relations::RelatedItem;
 pub use search::{
-    ItemQueryParams, JoinMode, PaginationInfo, QuickSearchMode,
-    SearchCondition, SearchField, SearchOperator, SearchPage, SortDirection,
-    SortField, SortOrder,
+    JoinMode, PaginationInfo, SearchCondition, SearchField, SearchOperator,
+    SearchPage, SortField, SortOrder,
 };
 pub use searches::SavedSearch;
 pub use settings::SettingEntry;

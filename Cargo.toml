@@ -14,7 +14,6 @@ repository = "https://github.com/jack/zotero-mcp-rs"
 license = "MIT OR Apache-2.0"
 
 [workspace.dependencies]
-bon = "3"
 fastembed = { version = "5.17.4", default-features = false, features = [
   "hf-hub-native-tls",
   "ort-load-dynamic",

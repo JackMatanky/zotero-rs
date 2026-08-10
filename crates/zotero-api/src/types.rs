@@ -27,142 +27,93 @@ use serde::{Deserialize, Serialize};
 
 use crate::keys::CollectionKey;
 
-/// Zotero item kind carried in the `itemType` field.
-///
-/// Only variants this crate branches on are named explicitly. Every other
-/// Zotero item type, such as `webpage`, `bookSection`, or `thesis`, round-trips
-/// through [`ItemType::Other`] with its original API string preserved.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(from = "String", into = "String")]
-pub enum ItemType {
-    /// Annotation item (`annotation`).
-    Annotation,
-    /// Artwork item (`artwork`).
-    Artwork,
-    /// Attachment item (`attachment`).
-    Attachment,
-    /// Audio recording item (`audioRecording`).
-    AudioRecording,
-    /// Bill item (`bill`).
-    Bill,
-    /// Blog post item (`blogPost`).
-    BlogPost,
-    /// Book item (`book`).
-    Book,
-    /// Book section item (`bookSection`).
-    BookSection,
-    /// Case item (`case`).
-    Case,
-    /// Computer program item (`computerProgram`).
-    ComputerProgram,
-    /// Conference paper item (`conferencePaper`).
-    ConferencePaper,
-    /// Dictionary entry item (`dictionaryEntry`).
-    DictionaryEntry,
-    /// Document item (`document`).
-    Document,
-    /// Email item (`email`).
-    Email,
-    /// Encyclopedia article item (`encyclopediaArticle`).
-    EncyclopediaArticle,
-    /// Film item (`film`).
-    Film,
-    /// Forum post item (`forumPost`).
-    ForumPost,
-    /// Hearing item (`hearing`).
-    Hearing,
-    /// Instant message item (`instantMessage`).
-    InstantMessage,
-    /// Interview item (`interview`).
-    Interview,
-    /// Journal article item (`journalArticle`).
-    JournalArticle,
-    /// Letter item (`letter`).
-    Letter,
-    /// Magazine article item (`magazineArticle`).
-    MagazineArticle,
-    /// Manuscript item (`manuscript`).
-    Manuscript,
-    /// Map item (`map`).
-    Map,
-    /// Newspaper article item (`newspaperArticle`).
-    NewspaperArticle,
-    /// Note item (`note`).
-    Note,
-    /// Patent item (`patent`).
-    Patent,
-    /// Podcast item (`podcast`).
-    Podcast,
-    /// Preprint item (`preprint`).
-    Preprint,
-    /// Presentation item (`presentation`).
-    Presentation,
-    /// Radio broadcast item (`radioBroadcast`).
-    RadioBroadcast,
-    /// Report item (`report`).
-    Report,
-    /// Statute item (`statute`).
-    Statute,
-    /// Thesis item (`thesis`).
-    Thesis,
-    /// TV broadcast item (`tvBroadcast`).
-    TvBroadcast,
-    /// Video recording item (`videoRecording`).
-    VideoRecording,
-    /// Webpage item (`webpage`).
-    Webpage,
-    /// Any Zotero item type not modeled above; carries the original API value.
-    Other(String),
+open_string_enum! {
+    /// Zotero item kind carried in the `itemType` field.
+    ///
+    /// Only variants this crate branches on are named explicitly. Every other
+    /// Zotero item type, such as `webpage`, `bookSection`, or `thesis`, round-trips
+    /// through [`ItemType::Other`] with its original API string preserved.
+    pub enum ItemType {
+        /// Annotation item (`annotation`).
+        Annotation => "annotation",
+        /// Artwork item (`artwork`).
+        Artwork => "artwork",
+        /// Attachment item (`attachment`).
+        Attachment => "attachment",
+        /// Audio recording item (`audioRecording`).
+        AudioRecording => "audioRecording",
+        /// Bill item (`bill`).
+        Bill => "bill",
+        /// Blog post item (`blogPost`).
+        BlogPost => "blogPost",
+        /// Book item (`book`).
+        Book => "book",
+        /// Book section item (`bookSection`).
+        BookSection => "bookSection",
+        /// Case item (`case`).
+        Case => "case",
+        /// Computer program item (`computerProgram`).
+        ComputerProgram => "computerProgram",
+        /// Conference paper item (`conferencePaper`).
+        ConferencePaper => "conferencePaper",
+        /// Dictionary entry item (`dictionaryEntry`).
+        DictionaryEntry => "dictionaryEntry",
+        /// Document item (`document`).
+        Document => "document",
+        /// Email item (`email`).
+        Email => "email",
+        /// Encyclopedia article item (`encyclopediaArticle`).
+        EncyclopediaArticle => "encyclopediaArticle",
+        /// Film item (`film`).
+        Film => "film",
+        /// Forum post item (`forumPost`).
+        ForumPost => "forumPost",
+        /// Hearing item (`hearing`).
+        Hearing => "hearing",
+        /// Instant message item (`instantMessage`).
+        InstantMessage => "instantMessage",
+        /// Interview item (`interview`).
+        Interview => "interview",
+        /// Journal article item (`journalArticle`).
+        JournalArticle => "journalArticle",
+        /// Letter item (`letter`).
+        Letter => "letter",
+        /// Magazine article item (`magazineArticle`).
+        MagazineArticle => "magazineArticle",
+        /// Manuscript item (`manuscript`).
+        Manuscript => "manuscript",
+        /// Map item (`map`).
+        Map => "map",
+        /// Newspaper article item (`newspaperArticle`).
+        NewspaperArticle => "newspaperArticle",
+        /// Note item (`note`).
+        Note => "note",
+        /// Patent item (`patent`).
+        Patent => "patent",
+        /// Podcast item (`podcast`).
+        Podcast => "podcast",
+        /// Preprint item (`preprint`).
+        Preprint => "preprint",
+        /// Presentation item (`presentation`).
+        Presentation => "presentation",
+        /// Radio broadcast item (`radioBroadcast`).
+        RadioBroadcast => "radioBroadcast",
+        /// Report item (`report`).
+        Report => "report",
+        /// Statute item (`statute`).
+        Statute => "statute",
+        /// Thesis item (`thesis`).
+        Thesis => "thesis",
+        /// TV broadcast item (`tvBroadcast`).
+        TvBroadcast => "tvBroadcast",
+        /// Video recording item (`videoRecording`).
+        VideoRecording => "videoRecording",
+        /// Webpage item (`webpage`).
+        Webpage => "webpage",
+    }
 }
 
 impl ItemType {
-    /// Borrows the API string representation of this [`ItemType`].
-    #[must_use]
-    #[inline]
-    pub fn as_str(&self) -> &str {
-        match self {
-            Self::Annotation => "annotation",
-            Self::Artwork => "artwork",
-            Self::Attachment => "attachment",
-            Self::AudioRecording => "audioRecording",
-            Self::Bill => "bill",
-            Self::BlogPost => "blogPost",
-            Self::Book => "book",
-            Self::BookSection => "bookSection",
-            Self::Case => "case",
-            Self::ComputerProgram => "computerProgram",
-            Self::ConferencePaper => "conferencePaper",
-            Self::DictionaryEntry => "dictionaryEntry",
-            Self::Document => "document",
-            Self::Email => "email",
-            Self::EncyclopediaArticle => "encyclopediaArticle",
-            Self::Film => "film",
-            Self::ForumPost => "forumPost",
-            Self::Hearing => "hearing",
-            Self::InstantMessage => "instantMessage",
-            Self::Interview => "interview",
-            Self::JournalArticle => "journalArticle",
-            Self::Letter => "letter",
-            Self::MagazineArticle => "magazineArticle",
-            Self::Manuscript => "manuscript",
-            Self::Map => "map",
-            Self::NewspaperArticle => "newspaperArticle",
-            Self::Note => "note",
-            Self::Patent => "patent",
-            Self::Podcast => "podcast",
-            Self::Preprint => "preprint",
-            Self::Presentation => "presentation",
-            Self::RadioBroadcast => "radioBroadcast",
-            Self::Report => "report",
-            Self::Statute => "statute",
-            Self::Thesis => "thesis",
-            Self::TvBroadcast => "tvBroadcast",
-            Self::VideoRecording => "videoRecording",
-            Self::Webpage => "webpage",
-            Self::Other(value) => value,
-        }
-    }
-
     /// Returns `true` if this item type is eligible for search and embedding
     /// indexing: everything except attachments, notes, and annotations.
     #[inline]
@@ -179,205 +130,49 @@ impl Default for ItemType {
     }
 }
 
-impl From<String> for ItemType {
-    #[inline]
-    fn from(value: String) -> Self {
-        match value.as_str() {
-            "annotation" => Self::Annotation,
-            "artwork" => Self::Artwork,
-            "attachment" => Self::Attachment,
-            "audioRecording" => Self::AudioRecording,
-            "bill" => Self::Bill,
-            "blogPost" => Self::BlogPost,
-            "book" => Self::Book,
-            "bookSection" => Self::BookSection,
-            "case" => Self::Case,
-            "computerProgram" => Self::ComputerProgram,
-            "conferencePaper" => Self::ConferencePaper,
-            "dictionaryEntry" => Self::DictionaryEntry,
-            "document" => Self::Document,
-            "email" => Self::Email,
-            "encyclopediaArticle" => Self::EncyclopediaArticle,
-            "film" => Self::Film,
-            "forumPost" => Self::ForumPost,
-            "hearing" => Self::Hearing,
-            "instantMessage" => Self::InstantMessage,
-            "interview" => Self::Interview,
-            "journalArticle" => Self::JournalArticle,
-            "letter" => Self::Letter,
-            "magazineArticle" => Self::MagazineArticle,
-            "manuscript" => Self::Manuscript,
-            "map" => Self::Map,
-            "newspaperArticle" => Self::NewspaperArticle,
-            "note" => Self::Note,
-            "patent" => Self::Patent,
-            "podcast" => Self::Podcast,
-            "preprint" => Self::Preprint,
-            "presentation" => Self::Presentation,
-            "radioBroadcast" => Self::RadioBroadcast,
-            "report" => Self::Report,
-            "statute" => Self::Statute,
-            "thesis" => Self::Thesis,
-            "tvBroadcast" => Self::TvBroadcast,
-            "videoRecording" => Self::VideoRecording,
-            "webpage" => Self::Webpage,
-            _ => Self::Other(value),
-        }
+open_string_enum! {
+    /// PDF annotation kind carried in the `annotationType` field.
+    ///
+    /// Falls back to [`AnnotationType::Other`] for annotation kinds this crate does
+    /// not create, such as `image` or `ink`.
+    pub enum AnnotationType {
+        /// Text highlight annotation (`highlight`).
+        Highlight => "highlight",
+        /// Text underline annotation (`underline`).
+        Underline => "underline",
+        /// Standalone PDF note annotation (`note`).
+        Note => "note",
     }
 }
 
-impl From<&str> for ItemType {
-    #[inline]
-    fn from(value: &str) -> Self {
-        Self::from(value.to_owned())
+open_string_enum! {
+    /// Creator role carried in the `creatorType` field.
+    ///
+    /// Zotero defines many item-type-specific creator roles. The common roles are
+    /// named explicitly, while [`CreatorType::Other`] preserves anything else for
+    /// round-tripping.
+    pub enum CreatorType {
+        /// Primary author or creator (`author`).
+        Author => "author",
+        /// Editor (`editor`).
+        Editor => "editor",
+        /// Translator (`translator`).
+        Translator => "translator",
     }
 }
 
-impl From<ItemType> for String {
-    #[inline]
-    fn from(value: ItemType) -> Self {
-        match value {
-            ItemType::Other(value) => value,
-            known => known.as_str().to_owned(),
-        }
-    }
-}
-
-/// PDF annotation kind carried in the `annotationType` field.
-///
-/// Falls back to [`AnnotationType::Other`] for annotation kinds this crate does
-/// not create, such as `image` or `ink`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(from = "String", into = "String")]
-pub enum AnnotationType {
-    /// Text highlight annotation (`highlight`).
-    Highlight,
-    /// Text underline annotation (`underline`).
-    Underline,
-    /// Standalone PDF note annotation (`note`).
-    Note,
-    /// Any annotation kind not modeled above; carries the original API value.
-    Other(String),
-}
-
-impl AnnotationType {
-    /// Borrows the API string representation of this [`AnnotationType`].
-    #[inline]
-    #[must_use]
-    pub fn as_str(&self) -> &str {
-        match self {
-            Self::Highlight => "highlight",
-            Self::Underline => "underline",
-            Self::Note => "note",
-            Self::Other(value) => value,
-        }
-    }
-}
-
-impl From<String> for AnnotationType {
-    #[inline]
-    fn from(value: String) -> Self {
-        match value.as_str() {
-            "highlight" => Self::Highlight,
-            "underline" => Self::Underline,
-            "note" => Self::Note,
-            _ => Self::Other(value),
-        }
-    }
-}
-
-impl From<AnnotationType> for String {
-    #[inline]
-    fn from(value: AnnotationType) -> Self {
-        match value {
-            AnnotationType::Other(value) => value,
-            known => known.as_str().to_owned(),
-        }
-    }
-}
-
-/// Creator role carried in the `creatorType` field.
-///
-/// Zotero defines many item-type-specific creator roles. The common roles are
-/// named explicitly, while [`CreatorType::Other`] preserves anything else for
-/// round-tripping.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(from = "String", into = "String")]
-pub enum CreatorType {
-    /// Primary author or creator (`author`).
-    Author,
-    /// Editor (`editor`).
-    Editor,
-    /// Translator (`translator`).
-    Translator,
-    /// Any creator role not modeled above; carries the original API value.
-    Other(String),
-}
-
-impl From<String> for CreatorType {
-    #[inline]
-    fn from(value: String) -> Self {
-        match value.as_str() {
-            "author" => Self::Author,
-            "editor" => Self::Editor,
-            "translator" => Self::Translator,
-            _ => Self::Other(value),
-        }
-    }
-}
-
-impl From<CreatorType> for String {
-    #[inline]
-    fn from(value: CreatorType) -> Self {
-        match value {
-            CreatorType::Author => "author".to_owned(),
-            CreatorType::Editor => "editor".to_owned(),
-            CreatorType::Translator => "translator".to_owned(),
-            CreatorType::Other(s) => s,
-        }
-    }
-}
-
-/// Attachment storage mode carried in the `linkMode` field.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(from = "String", into = "String")]
-pub enum LinkMode {
-    /// File stored directly inside Zotero's storage directory
-    /// (`imported_file`).
-    ImportedFile,
-    /// File linked from an external filesystem path (`linked_file`).
-    LinkedFile,
-    /// Web page or remote URL link (`linked_url`).
-    LinkedUrl,
-    /// Saved HTML snapshot or imported URL content (`imported_url`).
-    ImportedUrl,
-    /// Any link mode not modeled above; carries the original API value.
-    Other(String),
-}
-
-impl From<String> for LinkMode {
-    #[inline]
-    fn from(value: String) -> Self {
-        match value.as_str() {
-            "imported_file" => Self::ImportedFile,
-            "linked_file" => Self::LinkedFile,
-            "linked_url" => Self::LinkedUrl,
-            "imported_url" => Self::ImportedUrl,
-            _ => Self::Other(value),
-        }
-    }
-}
-
-impl From<LinkMode> for String {
-    #[inline]
-    fn from(value: LinkMode) -> Self {
-        match value {
-            LinkMode::ImportedFile => "imported_file".to_owned(),
-            LinkMode::LinkedFile => "linked_file".to_owned(),
-            LinkMode::LinkedUrl => "linked_url".to_owned(),
-            LinkMode::ImportedUrl => "imported_url".to_owned(),
-            LinkMode::Other(s) => s,
-        }
+open_string_enum! {
+    /// Attachment storage mode carried in the `linkMode` field.
+    pub enum LinkMode {
+        /// File stored directly inside Zotero's storage directory
+        /// (`imported_file`).
+        ImportedFile => "imported_file",
+        /// File linked from an external filesystem path (`linked_file`).
+        LinkedFile => "linked_file",
+        /// Web page or remote URL link (`linked_url`).
+        LinkedUrl => "linked_url",
+        /// Saved HTML snapshot or imported URL content (`imported_url`).
+        ImportedUrl => "imported_url",
     }
 }
 

@@ -1,65 +1,15 @@
 //! Search and query operations for the Zotero Local HTTP API.
 //!
-//! Provides type-safe URL parameter builders ([`ItemQueryParams`]) and
-//! [`ZoteroClient`] methods for free-text search, tag queries, and citation key
-//! lookup.
+//! Provides [`ZoteroClient`] methods for free-text search, tag queries,
+//! structured multi-condition search, and citation key lookup.
 
-use query_engine::{
-    PageAccumulator, PreparedCondition, finish_page, is_searchable_item,
-    item_matches_conditions, paginate, sort_items,
-};
 use serde::{Deserialize, Serialize};
 
 use crate::{
     client::{ZoteroClient, ZoteroResponse},
     errors::ZoteroApiError,
     objects::ZoteroItem,
-    types::ItemType,
 };
-
-/// Quick search modes supported by Zotero Local API.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub enum QuickSearchMode {
-    /// Search title, creator, and year fields.
-    TitleCreatorYear,
-    /// Search all fields including fulltext.
-    Everything,
-}
-
-/// Sort direction for query results.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub enum SortDirection {
-    /// Ascending order.
-    Asc,
-    /// Descending order.
-    Desc,
-}
-
-/// Type-safe builder for Zotero Local API `/items` query parameters.
-#[derive(Debug, Clone, Default, bon::Builder)]
-#[builder(on(String, into))]
-pub struct ItemQueryParams {
-    /// Free-text search query string (`q`).
-    pub q: Option<String>,
-    /// Quick search mode (`qmode`).
-    pub qmode: Option<QuickSearchMode>,
-    /// Filter by item type (`itemType`).
-    pub item_type: Option<ItemType>,
-    /// Filter by tag (`tag`).
-    pub tag: Option<String>,
-    /// Sort field (`sort`).
-    pub sort: Option<String>,
-    /// Sort direction (`direction`).
-    pub direction: Option<SortDirection>,
-    /// Page result limit (`limit`).
-    pub limit: Option<usize>,
-    /// 0-based page start index (`start`).
-    pub start: Option<usize>,
-    /// Whether to include trashed items (`includeTrashed`).
-    pub include_trashed: Option<bool>,
-}
 
 /// Searchable item field in structured searches.
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
@@ -155,70 +105,6 @@ pub struct SearchPage<T> {
 }
 
 impl ZoteroClient {
-    /// Queries the `/items` endpoint using a structured [`ItemQueryParams`].
-    /// # Errors
-    ///
-    /// Returns [`ZoteroApiError::LocalApi`]/[`ZoteroApiError::Network`]/
-    /// [`ZoteroApiError::Json`] if the request fails.
-    #[inline]
-    pub async fn query_items(
-        &self,
-        params: &ItemQueryParams,
-    ) -> Result<SearchPage<ZoteroItem>, ZoteroApiError> {
-        let mut req = self.get("/items");
-        if let Some(q) = &params.q {
-            req = req.query("q", q);
-        }
-        if let Some(qmode) = params.qmode {
-            let mode_str = match qmode {
-                QuickSearchMode::TitleCreatorYear => "titleCreatorYear",
-                QuickSearchMode::Everything => "everything",
-            };
-            req = req.query("qmode", mode_str);
-        }
-        if let Some(item_type) = &params.item_type {
-            req = req.query("itemType", item_type.as_str());
-        }
-        if let Some(tag) = &params.tag {
-            req = req.query("tag", tag);
-        }
-        if let Some(sort) = &params.sort {
-            req = req.query("sort", sort);
-        }
-        if let Some(dir) = params.direction {
-            let dir_str = match dir {
-                SortDirection::Asc => "asc",
-                SortDirection::Desc => "desc",
-            };
-            req = req.query("direction", dir_str);
-        }
-        if let Some(start) = params.start {
-            req = req.query("start", start.to_string());
-        }
-        if let Some(limit) = params.limit {
-            req = req.query("limit", limit.to_string());
-        }
-        if let Some(true) = params.include_trashed {
-            req = req.query("includeTrashed", "1");
-        }
-
-        let res: ZoteroResponse<Vec<ZoteroItem>> = req.send().await?;
-        let offset = params.start.unwrap_or(0);
-        let limit = params.limit.unwrap_or(res.data.len());
-        let total = res.total_results.unwrap_or(res.data.len());
-        let has_more = offset.saturating_add(limit) < total;
-
-        Ok(SearchPage {
-            items: res.data,
-            pagination: PaginationInfo {
-                limit,
-                offset,
-                total,
-                has_more,
-            },
-        })
-    }
-
     /// Searches items matching `query`, returning a paginated page.
     #[inline]
     /// # Errors
@@ -313,6 +199,31 @@ impl ZoteroClient {
     }
 }
 
+/// Wraps a server-fetched page, falling back to `offset + items.len()` when
+/// the server reports no total.
+fn finish_page(
+    items: Vec<ZoteroItem>,
+    server_total: Option<usize>,
+    offset: usize,
+    limit: usize,
+) -> SearchPage<ZoteroItem> {
+    let returned = items.len();
+    let total = server_total.unwrap_or_else(|| offset.saturating_add(returned));
+    let has_more = server_total.map_or(returned == limit, |exact| {
+        offset.saturating_add(returned) < exact
+    });
+
+    SearchPage {
+        items,
+        pagination: PaginationInfo {
+            limit,
+            offset,
+            total,
+            has_more,
+        },
+    }
+}
+
 impl ZoteroClient {
     /// Executes an advanced multi-condition structured search over item fields.
     ///
@@ -348,32 +259,16 @@ impl ZoteroClient {
         }
 
         let items = self.get_all_items().await?;
-        let prepared: Vec<_> =
-            conditions.iter().map(PreparedCondition::from).collect();
+        let mut query = query_builder::QueryBuilder::new(
+            &conditions,
+            join_mode,
+            offset,
+            limit,
+        );
         if let Some(field) = sort {
-            let matches: Vec<ZoteroItem> = items
-                .into_iter()
-                .filter(|item| {
-                    is_searchable_item(item)
-                        && item_matches_conditions(item, &prepared, join_mode)
-                })
-                .collect();
-            return Ok(paginate(
-                sort_items(matches, field, sort_direction),
-                offset,
-                limit,
-            ));
+            query = query.sort_by(field, sort_direction);
         }
-
-        let mut page = PageAccumulator::new(offset, limit);
-        for item in items {
-            if is_searchable_item(&item)
-                && item_matches_conditions(&item, &prepared, join_mode)
-            {
-                page.push_match(item);
-            }
-        }
-        Ok(page.into_page())
+        Ok(query.run(items))
     }
 
     /// Builds a server-search URL for `conditions` when they are fully
@@ -457,14 +352,14 @@ impl ZoteroClient {
     }
 }
 
-/// Client-side query evaluation for advanced searches the Zotero Local API
-/// cannot execute server-side: boolean predicate matching, sorting, and
-/// pagination-shaping.
+/// Client-side query evaluator for advanced searches the Zotero Local API
+/// cannot execute server-side: filters, sorts, and paginates a set of items
+/// already fetched from the server.
 ///
 /// Used exclusively by [`ZoteroClient::advanced_search`] as a client-side
 /// fallback when a structured search's conditions cannot be pushed down to
 /// Zotero's quick-search query parameters.
-mod query_engine {
+mod query_builder {
     use super::{
         JoinMode, PaginationInfo, SearchCondition, SearchField, SearchOperator,
         SearchPage, SortField, SortOrder,
@@ -472,7 +367,7 @@ mod query_engine {
     use crate::objects::ZoteroItem;
 
     /// Search condition prepared once for client-side scans.
-    pub(super) struct PreparedCondition<'a> {
+    struct PreparedCondition<'a> {
         field: &'a SearchField,
         operator: &'a SearchOperator,
         value: &'a str,
@@ -579,7 +474,7 @@ mod query_engine {
     }
 
     /// Accumulates only the requested page while still counting all matches.
-    pub(super) struct PageAccumulator<T> {
+    struct PageAccumulator<T> {
         offset: usize,
         limit: usize,
         total: usize,
@@ -587,7 +482,7 @@ mod query_engine {
     }
 
     impl<T> PageAccumulator<T> {
-        pub(super) fn new(offset: usize, limit: usize) -> Self {
+        fn new(offset: usize, limit: usize) -> Self {
             Self {
                 offset,
                 limit,
@@ -596,14 +491,14 @@ mod query_engine {
             }
         }
 
-        pub(super) fn push_match(&mut self, item: T) {
+        fn push_match(&mut self, item: T) {
             if self.total >= self.offset && self.items.len() < self.limit {
                 self.items.push(item);
             }
             self.total = self.total.saturating_add(1);
         }
 
-        pub(super) fn into_page(self) -> SearchPage<T> {
+        fn into_page(self) -> SearchPage<T> {
             let offset = self.offset.min(self.total);
             let returned = self.items.len();
             SearchPage {
@@ -620,7 +515,7 @@ mod query_engine {
 
     /// Returns a `{items, pagination}` page slicing `results` at
     /// `offset`/`limit`.
-    pub(super) fn paginate<T>(
+    fn paginate<T>(
         results: Vec<T>,
         offset: usize,
         limit: usize,
@@ -640,35 +535,9 @@ mod query_engine {
         }
     }
 
-    /// Wraps a server-fetched page, falling back to `offset + items.len()`
-    /// when the server reports no total.
-    pub(super) fn finish_page(
-        items: Vec<ZoteroItem>,
-        server_total: Option<usize>,
-        offset: usize,
-        limit: usize,
-    ) -> SearchPage<ZoteroItem> {
-        let returned = items.len();
-        let total =
-            server_total.unwrap_or_else(|| offset.saturating_add(returned));
-        let has_more = server_total.map_or(returned == limit, |exact| {
-            offset.saturating_add(returned) < exact
-        });
-
-        SearchPage {
-            items,
-            pagination: PaginationInfo {
-                limit,
-                offset,
-                total,
-                has_more,
-            },
-        }
-    }
-
     /// Returns true for items that are not attachments, notes, or
     /// annotations.
-    pub(super) fn is_searchable_item(item: &ZoteroItem) -> bool {
+    fn is_searchable_item(item: &ZoteroItem) -> bool {
         item.data.item_type.is_indexable()
     }
 
@@ -690,7 +559,7 @@ mod query_engine {
         cond.matches_str(&full)
     }
 
-    pub(super) fn item_matches_conditions(
+    fn item_matches_conditions(
         item: &ZoteroItem,
         conditions: &[PreparedCondition<'_>],
         join_mode: JoinMode,
@@ -725,7 +594,7 @@ mod query_engine {
     }
 
     /// Sorts `items` by `field` in `direction` and returns the sorted items.
-    pub(super) fn sort_items(
+    fn sort_items(
         items: Vec<ZoteroItem>,
         field: SortField,
         direction: SortOrder,
@@ -768,6 +637,91 @@ mod query_engine {
             }
         }
     }
+
+    /// Client-side evaluator for a structured search: filters items against
+    /// [`SearchCondition`]s, optionally sorts, and returns one page.
+    pub(super) struct QueryBuilder<'a> {
+        conditions: Vec<PreparedCondition<'a>>,
+        join_mode: JoinMode,
+        sort: Option<(SortField, SortOrder)>,
+        offset: usize,
+        limit: usize,
+    }
+
+    impl<'a> QueryBuilder<'a> {
+        /// Prepares `conditions` for repeated matching against items.
+        pub(super) fn new(
+            conditions: &'a [SearchCondition],
+            join_mode: JoinMode,
+            offset: usize,
+            limit: usize,
+        ) -> Self {
+            Self {
+                conditions: conditions
+                    .iter()
+                    .map(PreparedCondition::from)
+                    .collect(),
+                join_mode,
+                sort: None,
+                offset,
+                limit,
+            }
+        }
+
+        /// Sorts matched items by `field` in `direction` before paginating.
+        #[must_use]
+        pub(super) fn sort_by(
+            mut self,
+            field: SortField,
+            direction: SortOrder,
+        ) -> Self {
+            self.sort = Some((field, direction));
+            self
+        }
+
+        /// Returns `true` if `item` is searchable and matches every
+        /// configured condition per `join_mode`.
+        fn matches(&self, item: &ZoteroItem) -> bool {
+            is_searchable_item(item)
+                && item_matches_conditions(
+                    item,
+                    &self.conditions,
+                    self.join_mode,
+                )
+        }
+
+        /// Filters `items` against the configured conditions, applies the
+        /// configured sort (if any), and returns the requested page.
+        ///
+        /// When no sort is configured, matches are accumulated with
+        /// [`PageAccumulator`] so memory use is bounded by `limit` rather
+        /// than the total match count; sorting requires materializing every
+        /// match first, so that path collects into a `Vec` before slicing.
+        pub(super) fn run(
+            self,
+            items: Vec<ZoteroItem>,
+        ) -> SearchPage<ZoteroItem> {
+            if let Some((field, direction)) = self.sort {
+                let matches: Vec<ZoteroItem> = items
+                    .into_iter()
+                    .filter(|item| self.matches(item))
+                    .collect();
+                return paginate(
+                    sort_items(matches, field, direction),
+                    self.offset,
+                    self.limit,
+                );
+            }
+
+            let mut page = PageAccumulator::new(self.offset, self.limit);
+            for item in items {
+                if self.matches(&item) {
+                    page.push_match(item);
+                }
+            }
+            page.into_page()
+        }
+    }
 }
 
 #[cfg(test)]
@@ -794,6 +748,55 @@ mod tests {
         assert_eq!(page.pagination.total, 50);
         assert_eq!(page.pagination.limit, 2);
         assert_eq!(page.pagination.offset, 0);
+        assert!(page.pagination.has_more);
+    }
+
+    #[tokio::test]
+    async fn advanced_search_bounds_memory_to_limit_while_counting_all_matches()
+    {
+        let match_count = 50_usize;
+        let items = (0..match_count)
+            .map(|i| {
+                format!(
+                    r#"{{"key":"ITEM{i:04}","version":1,"data":{{"key":"ITEM{i:04}","version":1,"itemType":"journalArticle","title":"Paper {i}"}}}}"#
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(",");
+        let server = MockServer::new(vec![http_response_with_headers(
+            "200 OK",
+            &[],
+            &format!("[{items}]"),
+        )]);
+        let client = ZoteroClient::new(server.url());
+        let conditions = vec![SearchCondition {
+            field: SearchField::Title,
+            operator: SearchOperator::Contains,
+            value: "Paper".to_owned(),
+        }];
+
+        let page = client
+            .advanced_search(
+                conditions,
+                JoinMode::Any,
+                None,
+                SortOrder::Asc,
+                0,
+                5,
+            )
+            .await
+            .expect("advanced_search should succeed");
+
+        assert_eq!(
+            page.items.len(),
+            5,
+            "unsorted path should only retain `limit` items in memory"
+        );
+        assert_eq!(
+            page.pagination.total, match_count,
+            "pagination.total should still reflect every match, not just the \
+             retained page"
+        );
         assert!(page.pagination.has_more);
     }
 }

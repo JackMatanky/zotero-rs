@@ -4,7 +4,7 @@
 //! for Zotero Local API operations. The client handles target library scoping,
 //! authentication headers, error conversion, and response decoding.
 
-use std::time::Duration;
+use std::{future::Future, time::Duration};
 
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
@@ -494,10 +494,17 @@ impl<'a> ApiRequestBuilder<'a> {
                         || status == reqwest::StatusCode::TOO_MANY_REQUESTS)
                         && attempts < 3
                     {
-                        tokio::time::sleep(Duration::from_millis(
-                            retry_delay_ms(attempts),
-                        ))
-                        .await;
+                        let delay_ms = resp
+                            .headers()
+                            .get(reqwest::header::RETRY_AFTER)
+                            .and_then(|v| v.to_str().ok())
+                            .and_then(|v| v.parse::<u64>().ok())
+                            .map_or_else(
+                                || retry_delay_ms(attempts),
+                                |secs| secs.saturating_mul(1000),
+                            );
+                        tokio::time::sleep(Duration::from_millis(delay_ms))
+                            .await;
                         continue;
                     }
                     return Ok(resp);
@@ -517,22 +524,23 @@ impl<'a> ApiRequestBuilder<'a> {
     /// [`ZoteroResponse<T>`].
     /// # Errors
     ///
-    /// Returns [`ZoteroApiError::LocalApi`] if the response status is not 2xx,
-    /// or [`ZoteroApiError::Network`]/[`ZoteroApiError::Json`] if the request
+    /// Returns [`ZoteroApiError::LocalApi`]/[`ZoteroApiError::VersionConflict`]
+    /// if the response status is not 2xx, or
+    /// [`ZoteroApiError::Network`]/[`ZoteroApiError::Json`] if the request
     /// fails or the body cannot be decoded.
     #[inline]
     pub async fn send<T: DeserializeOwned>(
         &self,
     ) -> Result<ZoteroResponse<T>, ZoteroApiError> {
-        let resp = self.send_raw().await?;
-        let status = resp.status();
-        if !status.is_success() {
-            return Err(ZoteroApiError::LocalApi {
-                status: status.as_u16(),
-                message: resp.text().await.unwrap_or_default(),
-            });
-        }
+        Self::decode_success(ensure_success(self.send_raw().await?).await?)
+            .await
+    }
 
+    /// Extracts Zotero response headers and decodes the JSON body of an
+    /// already-successful (2xx) response.
+    async fn decode_success<T: DeserializeOwned>(
+        resp: reqwest::Response,
+    ) -> Result<ZoteroResponse<T>, ZoteroApiError> {
         let total_results = resp
             .headers()
             .get("Total-Results")
@@ -558,6 +566,31 @@ impl<'a> ApiRequestBuilder<'a> {
         })
     }
 
+    /// Sends the request, returning [`ZoteroApiError::NotFound`] with
+    /// `missing`'s message as the payload if the response status is `404`,
+    /// otherwise decoding the response like [`Self::send`].
+    /// # Errors
+    ///
+    /// Returns [`ZoteroApiError::NotFound`] if the response status is `404`,
+    /// [`ZoteroApiError::LocalApi`]/[`ZoteroApiError::VersionConflict`] for
+    /// any other non-2xx status, or
+    /// [`ZoteroApiError::Network`]/[`ZoteroApiError::Json`] if the request
+    /// fails or the body cannot be decoded.
+    #[inline]
+    pub async fn send_or_not_found<
+        T: DeserializeOwned,
+        M: std::fmt::Display,
+    >(
+        &self,
+        missing: M,
+    ) -> Result<ZoteroResponse<T>, ZoteroApiError> {
+        let resp = self.send_raw().await?;
+        if resp.status() == reqwest::StatusCode::NOT_FOUND {
+            return Err(ZoteroApiError::NotFound(missing.to_string()));
+        }
+        Self::decode_success(ensure_success(resp).await?).await
+    }
+
     /// Sends the request and checks for a successful (2xx) status without
     /// attempting to decode a response body.
     ///
@@ -565,18 +598,12 @@ impl<'a> ApiRequestBuilder<'a> {
     /// that is not a `ZoteroResponse` envelope), such as `DELETE` requests.
     /// # Errors
     ///
-    /// Returns [`ZoteroApiError::LocalApi`] if the response status is not
-    /// 2xx, or [`ZoteroApiError::Network`] if the request fails.
+    /// Returns [`ZoteroApiError::LocalApi`]/[`ZoteroApiError::VersionConflict`]
+    /// if the response status is not 2xx, or [`ZoteroApiError::Network`] if
+    /// the request fails.
     #[inline]
     pub async fn send_unit(&self) -> Result<(), ZoteroApiError> {
-        let resp = self.send_raw().await?;
-        let status = resp.status();
-        if !status.is_success() {
-            return Err(ZoteroApiError::LocalApi {
-                status: status.as_u16(),
-                message: resp.text().await.unwrap_or_default(),
-            });
-        }
+        ensure_success(self.send_raw().await?).await?;
         Ok(())
     }
 }
@@ -587,20 +614,24 @@ fn retry_delay_ms(attempt: u32) -> u64 {
     200_u64.saturating_mul(1_u64 << attempt.saturating_sub(1).min(16))
 }
 
-/// Returns `resp` if its status is 2xx, otherwise consumes the body as the
-/// error message and returns [`ZoteroApiError::LocalApi`].
+/// Returns `resp` if its status is 2xx. Otherwise consumes the body as the
+/// error message and returns [`ZoteroApiError::VersionConflict`] for a `412`
+/// status, or [`ZoteroApiError::LocalApi`] for any other non-2xx status.
 pub(super) async fn ensure_success(
     resp: reqwest::Response,
 ) -> Result<reqwest::Response, ZoteroApiError> {
     let status = resp.status();
     if status.is_success() {
-        Ok(resp)
-    } else {
-        Err(ZoteroApiError::LocalApi {
-            status: status.as_u16(),
-            message: resp.text().await.unwrap_or_default(),
-        })
+        return Ok(resp);
     }
+    let message = resp.text().await.unwrap_or_default();
+    if status == reqwest::StatusCode::PRECONDITION_FAILED {
+        return Err(ZoteroApiError::VersionConflict(message));
+    }
+    Err(ZoteroApiError::LocalApi {
+        status: status.as_u16(),
+        message,
+    })
 }
 
 /// Returns the first element of `data`, or a `500 "Created {kind} array was
@@ -624,6 +655,25 @@ pub(super) fn add_pagination(url: &str, start: usize, limit: usize) -> String {
         '?'
     };
     format!("{url}{sep}start={start}&limit={limit}")
+}
+
+/// Decodes `resp`'s JSON body as `T`, or calls `refetch` if the body is empty
+/// or undecodable — Zotero's Local API returns an empty body on a successful
+/// single-object `PATCH`/`PUT`, so every version-guarded update must refetch
+/// the object to return its current representation.
+pub(super) async fn decode_or_refetch<T, F, Fut>(
+    resp: reqwest::Response,
+    refetch: F,
+) -> Result<T, ZoteroApiError>
+where
+    T: DeserializeOwned,
+    F: FnOnce() -> Fut,
+    Fut: Future<Output = Result<T, ZoteroApiError>>,
+{
+    match resp.json::<T>().await {
+        Ok(value) => Ok(value),
+        Err(_) => refetch().await,
+    }
 }
 
 #[cfg(test)]
@@ -689,6 +739,53 @@ mod tests {
 
             assert!(!status.online);
             assert!(status.error.is_some());
+        }
+    }
+
+    mod response_handling {
+        use super::super::*;
+        use crate::client::test_http::{
+            MockServer, http_response, http_response_with_headers,
+        };
+
+        #[tokio::test]
+        async fn maps_412_to_version_conflict() {
+            let server = MockServer::new(vec![http_response(
+                "412 Precondition Failed",
+                "version mismatch",
+            )]);
+            let client = ZoteroClient::new(server.url());
+
+            let result = client.delete_req("/items/ITEM1").send_unit().await;
+
+            assert!(
+                matches!(result, Err(ZoteroApiError::VersionConflict(_))),
+                "412 should map to VersionConflict: {result:?}"
+            );
+        }
+
+        #[tokio::test]
+        async fn retry_after_header_overrides_exponential_backoff() {
+            let server = MockServer::new(vec![
+                http_response_with_headers(
+                    "429 Too Many Requests",
+                    &[("Retry-After", "0")],
+                    "",
+                ),
+                http_response("200 OK", "[]"),
+            ]);
+            let client = ZoteroClient::new(server.url());
+
+            let start = std::time::Instant::now();
+            let status = client.check_status().await;
+            let elapsed = start.elapsed();
+
+            assert!(status.online);
+            assert!(
+                elapsed < Duration::from_millis(150),
+                "Retry-After: 0 should skip the 200ms exponential backoff, \
+                 took {elapsed:?}"
+            );
         }
     }
 }

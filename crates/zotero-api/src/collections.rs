@@ -35,6 +35,26 @@ impl ZoteroClient {
         Ok(res.data)
     }
 
+    /// Fetches a single collection by key.
+    #[inline]
+    /// # Errors
+    ///
+    /// Returns [`ZoteroApiError::NotFound`] if no collection with
+    /// `collection_key` exists, or
+    /// [`ZoteroApiError::LocalApi`]/[`ZoteroApiError::Network`]/
+    /// [`ZoteroApiError::Json`] if the request fails.
+    pub async fn get_collection<K: AsRef<str>>(
+        &self,
+        collection_key: K,
+    ) -> Result<ZoteroCollection, ZoteroApiError> {
+        let key = collection_key.as_ref();
+        let res: ZoteroResponse<ZoteroCollection> = self
+            .get(format!("/collections/{key}"))
+            .send_or_not_found(format!("Collection {key}"))
+            .await?;
+        Ok(res.data)
+    }
+
     /// Searches collections by matching `query` against collection names
     /// case-insensitively.
     #[inline]
@@ -136,11 +156,9 @@ impl ZoteroClient {
         collection_key: K,
     ) -> Result<(), ZoteroApiError> {
         let key = collection_key.as_ref();
-        let path = format!("/collections/{key}");
-        let res: ZoteroResponse<ZoteroCollection> =
-            self.get(&path).send().await?;
-        self.delete_req(&path)
-            .unmodified_since_version(res.version.as_u64())
+        let current = self.get_collection(key).await?;
+        self.delete_req(format!("/collections/{key}"))
+            .unmodified_since_version(current.version.as_u64())
             .send_unit()
             .await?;
         Ok(())
@@ -160,10 +178,7 @@ impl ZoteroClient {
         parent: Option<&CollectionParent>,
     ) -> Result<ZoteroCollection, ZoteroApiError> {
         let key = collection_key.as_ref();
-        let path = format!("/collections/{key}");
-        let res: ZoteroResponse<ZoteroCollection> =
-            self.get(&path).send().await?;
-        let current = res.data;
+        let current = self.get_collection(key).await?;
 
         let new_name = name.unwrap_or(&current.data.name);
         let new_parent = parent
@@ -176,16 +191,14 @@ impl ZoteroClient {
             "parentCollection": new_parent,
         });
         let resp = crate::client::ensure_success(
-            self.put(&path).json(payload).send_raw().await?,
+            self.put(format!("/collections/{key}"))
+                .json(payload)
+                .send_raw()
+                .await?,
         )
         .await?;
-        if let Ok(col) = resp.json::<ZoteroCollection>().await {
-            Ok(col)
-        } else {
-            let refetch: ZoteroResponse<ZoteroCollection> =
-                self.get(&path).send().await?;
-            Ok(refetch.data)
-        }
+        crate::client::decode_or_refetch(resp, || self.get_collection(key))
+            .await
     }
 
     #[inline]
@@ -289,5 +302,85 @@ mod tests {
             child_body.get(0).and_then(|item| item.get("parentCollection")),
             Some(&json!("PARENT01"))
         );
+    }
+
+    mod get_collection {
+        use pretty_assertions::assert_eq;
+
+        use super::*;
+
+        #[tokio::test]
+        async fn returns_not_found_on_404() {
+            let server =
+                MockServer::new(vec![http_response("404 Not Found", "")]);
+            let client = ZoteroClient::new(server.url());
+
+            let result = client.get_collection("COLL0001").await;
+
+            assert!(
+                matches!(result, Err(ZoteroApiError::NotFound(_))),
+                "404 should map to NotFound: {result:?}"
+            );
+        }
+
+        #[tokio::test]
+        async fn decodes_successful_response() {
+            let body = collection_json(
+                "COLL0001",
+                "Machine Learning",
+                1,
+                &json!(false),
+            );
+            let server = MockServer::new(vec![http_response("200 OK", &body)]);
+            let client = ZoteroClient::new(server.url());
+
+            let result = client.get_collection("COLL0001").await;
+
+            assert!(result.is_ok(), "collection should decode: {result:?}");
+            assert_eq!(
+                result.expect("asserted Ok above").data.name,
+                "Machine Learning"
+            );
+        }
+    }
+
+    mod delete_collection {
+        use super::*;
+
+        #[tokio::test]
+        async fn returns_not_found_for_nonexistent_key() {
+            let server =
+                MockServer::new(vec![http_response("404 Not Found", "")]);
+            let client = ZoteroClient::new(server.url());
+
+            let result = client.delete_collection("MISSING1").await;
+
+            assert!(
+                matches!(result, Err(ZoteroApiError::NotFound(_))),
+                "deleting a nonexistent collection should be NotFound, not a \
+                 generic LocalApi error: {result:?}"
+            );
+        }
+    }
+
+    mod update_collection {
+        use super::*;
+
+        #[tokio::test]
+        async fn returns_not_found_for_nonexistent_key() {
+            let server =
+                MockServer::new(vec![http_response("404 Not Found", "")]);
+            let client = ZoteroClient::new(server.url());
+
+            let result = client
+                .update_collection("MISSING1", Some("New Name"), None)
+                .await;
+
+            assert!(
+                matches!(result, Err(ZoteroApiError::NotFound(_))),
+                "updating a nonexistent collection should be NotFound, not a \
+                 generic LocalApi error: {result:?}"
+            );
+        }
     }
 }

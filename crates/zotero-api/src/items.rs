@@ -3,7 +3,6 @@
 use std::{fmt::Write, path::Path};
 
 use md5::Digest;
-use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tokio::fs;
@@ -92,13 +91,11 @@ impl ZoteroClient {
         item_key: K,
     ) -> Result<ZoteroItem, ZoteroApiError> {
         let key = item_key.as_ref();
-        let path = format!("/items/{key}");
-        let resp = self.get(&path).send_raw().await?;
-        if resp.status() == StatusCode::NOT_FOUND {
-            return Err(ZoteroApiError::NotFound(format!("Item {key}")));
-        }
-        let resp = crate::client::ensure_success(resp).await?;
-        Ok(resp.json().await?)
+        let res: ZoteroResponse<ZoteroItem> = self
+            .get(format!("/items/{key}"))
+            .send_or_not_found(format!("Item {key}"))
+            .await?;
+        Ok(res.data)
     }
 
     /// Fetches unfiled items.
@@ -151,14 +148,11 @@ impl ZoteroClient {
         fields: serde_json::Value,
     ) -> Result<ZoteroItem, ZoteroApiError> {
         let key = item_key.as_ref();
-        let path = format!("/items/{key}");
-        let resp = self.patch(&path).json(fields).send_raw().await?;
-        let resp = crate::client::ensure_success(resp).await?;
-        if let Ok(item) = resp.json::<ZoteroItem>().await {
-            Ok(item)
-        } else {
-            self.get_item(key).await
-        }
+        let resp = crate::client::ensure_success(
+            self.patch(format!("/items/{key}")).json(fields).send_raw().await?,
+        )
+        .await?;
+        crate::client::decode_or_refetch(resp, || self.get_item(key)).await
     }
 
     /// Permanently deletes an item.
