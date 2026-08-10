@@ -26,9 +26,9 @@ use crate::{
 ///
 /// Each field is a JSON value mapping payload indices or item keys to their
 /// results. [`successful`](Self::successful) contains keys for items that were
-/// created or updated, [`unchanged`](Self::unchanged) lists keys of items
-/// whose data matched the existing version, and
-/// [`failed`](Self::failed) maps keys to error details.
+/// created or updated, [`unchanged`](Self::unchanged) lists keys of items whose
+/// data matched the existing version, and [`failed`](Self::failed) maps keys to
+/// error details.
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq, Default)]
 pub struct BatchWriteResponse {
     /// Successful item keys mapped by payload index or temporary key.
@@ -46,8 +46,9 @@ pub struct BatchWriteResponse {
 ///
 /// Use directly or build via [`crate::metadata::resolve_metadata`] (behind the
 /// `metadata` feature) to auto-populate fields from a DOI, arXiv ID, or ISBN.
-/// Pass to [`ZoteroClient::create_item_from_metadata`](crate::ZoteroClient::create_item_from_metadata)
-/// to persist.
+/// Pass to [`ZoteroClient::create_item_from_metadata`] to persist.
+///
+/// [`ZoteroClient::create_item_from_metadata`]: crate::ZoteroClient::create_item_from_metadata
 #[derive(Clone, Debug, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ItemDraft {
@@ -56,6 +57,7 @@ pub struct ItemDraft {
     pub item_type: ItemType,
     /// Title of the publication.
     pub title: String,
+    /// Creators credited on the item (authors, editors, etc.).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub creators: Vec<ZoteroCreator>,
     #[serde(default, skip_serializing_if = "String::is_empty")]
@@ -152,6 +154,7 @@ pub struct ZoteroItem {
     pub key: ItemKey,
     /// Item version for optimistic concurrency.
     pub version: LibraryVersion,
+    /// Library this item belongs to.
     #[serde(default)]
     pub library: Option<LibraryInfo>,
     /// HATEOAS link objects.
@@ -184,6 +187,7 @@ pub struct ZoteroItemData {
     pub title: Option<String>,
     #[serde(default)]
     pub creators: Vec<ZoteroCreator>,
+    /// Tags assigned to the item.
     #[serde(default)]
     pub tags: Vec<ZoteroTag>,
     #[serde(default)]
@@ -302,8 +306,10 @@ pub struct ZoteroCreator {
     /// Creator role (e.g. `"author"`, `"editor"`).
     #[serde(rename = "creatorType")]
     pub creator_type: Option<CreatorType>,
+    /// Given name for split-field creators.
     #[serde(rename = "firstName")]
     pub first_name: Option<String>,
+    /// Family name for split-field creators.
     #[serde(rename = "lastName")]
     pub last_name: Option<String>,
     /// Single-field name for institutional or single-field creators.
@@ -319,6 +325,7 @@ pub struct ZoteroTag {
     #[serde(rename = "type", default)]
     pub origin: TagOrigin,
 }
+
 /// A Zotero collection as returned by the Local API.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ZoteroCollection {

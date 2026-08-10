@@ -1,7 +1,7 @@
 //! Strongly-typed identifiers for Zotero objects.
 //!
-//! [`ItemKey`] and [`CollectionKey`] are 8-character alphanumeric keys that
-//! are structurally identical but semantically distinct — the compiler rejects
+//! [`ItemKey`] and [`CollectionKey`] are 8-character alphanumeric keys that are
+//! structurally identical but semantically distinct — the compiler rejects
 //! accidental transposition. [`TagName`] and [`CitationKey`] wrap plain strings
 //! for the same reason. [`LibraryVersion`] is a monotonically increasing
 //! counter used for [optimistic concurrency control](LibraryVersion#examples).
@@ -28,8 +28,8 @@ string_newtype!(
 string_newtype!(
     pub CollectionKey,
     "An 8-character alphanumeric key that identifies a Zotero collection \
-     within a library. Structurally identical to [`ItemKey`] but \
-     type-distinct to prevent accidental transposition.",
+     within a library. Structurally identical to [`ItemKey`] but type-distinct \
+     to prevent accidental transposition.",
 );
 string_newtype!(
     pub TagName,
@@ -71,13 +71,13 @@ impl From<&ItemKey> for RelationUri {
 /// Extracts an [`ItemKey`] from a `RelationUri`.
 ///
 /// Accepts both user-library (`/users/0/items/{KEY}`) and group-library
-/// (`/groups/{ID}/items/{KEY}`) URI forms. The trailing segment must be
-/// exactly 8 ASCII-alphanumeric characters.
+/// (`/groups/{ID}/items/{KEY}`) URI forms. The trailing segment must be exactly
+/// 8 ASCII-alphanumeric characters.
 ///
 /// # Errors
 ///
-/// Returns `RelationUriError` if the URI lacks an `/items/` segment or
-/// the trailing key is not 8 ASCII-alphanumeric characters.
+/// Returns `RelationUriError` if the URI lacks an `/items/` segment or the
+/// trailing key is not 8 ASCII-alphanumeric characters.
 impl TryFrom<&RelationUri> for ItemKey {
     type Error = RelationUriError;
 
@@ -108,10 +108,10 @@ impl std::fmt::Display for RelationUriError {
 /// A monotonically increasing library version counter for optimistic
 /// concurrency control.
 ///
-/// Pass the current version in an `If-Unmodified-Since-Version` request
-/// header. If another client has modified the library since this version,
-/// the Zotero server responds with `412 Precondition Failed` — the caller
-/// must re-fetch and retry.
+/// Pass the current version in an `If-Unmodified-Since-Version` request header.
+/// If another client has modified the library since this version, the Zotero
+/// server responds with `412 Precondition Failed` — the caller must re-fetch
+/// and retry.
 ///
 /// # Examples
 ///

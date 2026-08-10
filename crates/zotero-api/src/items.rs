@@ -407,7 +407,7 @@ impl ZoteroClient {
     /// [`LinkMode::ImportedFile`], storing only the `path` reference. For
     /// uploading actual file bytes, use
     /// [`import_pdf_file`](ZoteroClient::import_pdf_file) instead.
-    #[inline]
+    ///
     /// # Errors
     ///
     /// - [`LocalApi`] if Zotero rejects the request
@@ -417,6 +417,7 @@ impl ZoteroClient {
     /// [`LocalApi`]: ZoteroApiError::LocalApi
     /// [`Network`]: ZoteroApiError::Network
     /// [`Json`]: ZoteroApiError::Json
+    #[inline]
     pub async fn attach_file_link<K: AsRef<str>>(
         &self,
         parent_item_key: K,
@@ -454,7 +455,7 @@ impl ZoteroClient {
     /// 3. **Raw bytes.** `POST` the file bytes to the signed URL. On 201
     ///    Created, finalize with `POST /items/{key}/file` passing the
     ///    `uploadKey`.
-    #[inline]
+    ///
     /// # Errors
     ///
     /// - [`InputRejected`] if the path has no valid UTF-8 filename
@@ -469,6 +470,7 @@ impl ZoteroClient {
     /// [`LocalApi`]: ZoteroApiError::LocalApi
     /// [`Network`]: ZoteroApiError::Network
     /// [`Json`]: ZoteroApiError::Json
+    #[inline]
     pub async fn import_pdf_file<K: AsRef<str>>(
         &self,
         parent_item_key: Option<K>,

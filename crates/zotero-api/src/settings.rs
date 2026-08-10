@@ -20,12 +20,13 @@ pub struct SettingEntry {
 
 impl ZoteroClient {
     /// Fetches all configuration settings for the target library.
-    #[inline]
-    #[expect(clippy::else_if_without_else, reason = "fallback list handling")]
+    ///
     /// # Errors
     ///
     /// Returns [`ZoteroApiError::LocalApi`]/[`ZoteroApiError::Network`]/
     /// [`ZoteroApiError::Json`] if the request fails.
+    #[inline]
+    #[expect(clippy::else_if_without_else, reason = "fallback list handling")]
     pub async fn get_settings(
         &self,
     ) -> Result<HashMap<String, SettingEntry>, ZoteroApiError> {
@@ -51,11 +52,12 @@ impl ZoteroClient {
     }
 
     /// Fetches a single setting entry by setting key name.
-    #[inline]
+    ///
     /// # Errors
     ///
     /// Returns [`ZoteroApiError::LocalApi`]/[`ZoteroApiError::Network`]/
     /// [`ZoteroApiError::Json`] if the request fails.
+    #[inline]
     pub async fn get_setting<K: AsRef<str>>(
         &self,
         key: K,
@@ -75,11 +77,12 @@ impl ZoteroClient {
     }
 
     /// Updates a setting value by key name.
-    #[inline]
+    ///
     /// # Errors
     ///
     /// Returns [`ZoteroApiError::LocalApi`]/[`ZoteroApiError::Network`] if
     /// Zotero rejects the setting update.
+    #[inline]
     pub async fn update_setting<K: AsRef<str>>(
         &self,
         key: K,

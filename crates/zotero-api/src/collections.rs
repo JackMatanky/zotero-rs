@@ -27,11 +27,17 @@ impl ZoteroClient {
     /// Collections form a tree via [`CollectionParent`], but this method does
     /// not nest them. Every collection in the library is returned regardless
     /// of depth.
-    #[inline]
+    ///
     /// # Errors
     ///
-    /// Returns [`ZoteroApiError::LocalApi`]/[`ZoteroApiError::Network`]/
-    /// [`ZoteroApiError::Json`] if the request fails.
+    /// - [`LocalApi`] if Zotero returns a non-2xx status
+    /// - [`Network`] on connection failure
+    /// - [`Json`] if the response cannot be deserialized
+    ///
+    /// [`LocalApi`]: ZoteroApiError::LocalApi
+    /// [`Network`]: ZoteroApiError::Network
+    /// [`Json`]: ZoteroApiError::Json
+    #[inline]
     pub async fn get_collections(
         &self,
     ) -> Result<Vec<ZoteroCollection>, ZoteroApiError> {
@@ -41,13 +47,19 @@ impl ZoteroClient {
     }
 
     /// Returns a single collection by its key.
-    #[inline]
+    ///
     /// # Errors
     ///
-    /// Returns [`ZoteroApiError::NotFound`] if no collection with
-    /// `collection_key` exists, or
-    /// [`ZoteroApiError::LocalApi`]/[`ZoteroApiError::Network`]/
-    /// [`ZoteroApiError::Json`] if the request fails.
+    /// - [`NotFound`] if no collection with `collection_key` exists
+    /// - [`LocalApi`] if Zotero returns a non-2xx status
+    /// - [`Network`] on connection failure
+    /// - [`Json`] if the response cannot be deserialized
+    ///
+    /// [`NotFound`]: ZoteroApiError::NotFound
+    /// [`LocalApi`]: ZoteroApiError::LocalApi
+    /// [`Network`]: ZoteroApiError::Network
+    /// [`Json`]: ZoteroApiError::Json
+    #[inline]
     pub async fn get_collection<K: AsRef<str>>(
         &self,
         collection_key: K,
@@ -64,11 +76,17 @@ impl ZoteroClient {
     ///
     /// Fetches all collections and filters locally. Returns only collections
     /// whose name contains `query`.
-    #[inline]
+    ///
     /// # Errors
     ///
-    /// Returns [`ZoteroApiError::LocalApi`]/[`ZoteroApiError::Network`]/
-    /// [`ZoteroApiError::Json`] if fetching collections fails.
+    /// - [`LocalApi`] if Zotero returns a non-2xx status
+    /// - [`Network`] on connection failure
+    /// - [`Json`] if the response cannot be deserialized
+    ///
+    /// [`LocalApi`]: ZoteroApiError::LocalApi
+    /// [`Network`]: ZoteroApiError::Network
+    /// [`Json`]: ZoteroApiError::Json
+    #[inline]
     pub async fn search_collections(
         &self,
         query: &str,
@@ -83,11 +101,17 @@ impl ZoteroClient {
     }
 
     /// Returns all items in the collection identified by `collection_key`.
-    #[inline]
+    ///
     /// # Errors
     ///
-    /// Returns [`ZoteroApiError::LocalApi`]/[`ZoteroApiError::Network`]/
-    /// [`ZoteroApiError::Json`] if the request fails.
+    /// - [`LocalApi`] if Zotero returns a non-2xx status
+    /// - [`Network`] on connection failure
+    /// - [`Json`] if the response cannot be deserialized
+    ///
+    /// [`LocalApi`]: ZoteroApiError::LocalApi
+    /// [`Network`]: ZoteroApiError::Network
+    /// [`Json`]: ZoteroApiError::Json
+    #[inline]
     pub async fn get_collection_items<K: AsRef<str>>(
         &self,
         collection_key: K,
@@ -102,11 +126,15 @@ impl ZoteroClient {
     ///
     /// Pass `None` for `parent_key` to create a top-level collection, or
     /// `Some(key)` to create a child of the specified collection.
-    #[inline]
+    ///
     /// # Errors
     ///
-    /// Returns [`ZoteroApiError::LocalApi`] if Zotero rejects the creation
-    /// request, or [`ZoteroApiError::Network`] if the request fails.
+    /// - [`LocalApi`] if Zotero rejects the creation request
+    /// - [`Network`] on connection failure
+    ///
+    /// [`LocalApi`]: ZoteroApiError::LocalApi
+    /// [`Network`]: ZoteroApiError::Network
+    #[inline]
     pub async fn create_collection(
         &self,
         name: &str,
@@ -131,11 +159,15 @@ impl ZoteroClient {
     /// items already in the collection are ignored. With
     /// [`CollectionItemAction::Remove`], items are removed; items not in the
     /// collection are ignored. Item metadata is not modified.
-    #[inline]
+    ///
     /// # Errors
     ///
-    /// Returns [`ZoteroApiError::LocalApi`]/[`ZoteroApiError::Network`] if the
-    /// request fails.
+    /// - [`LocalApi`] if Zotero returns a non-2xx status
+    /// - [`Network`] on connection failure
+    ///
+    /// [`LocalApi`]: ZoteroApiError::LocalApi
+    /// [`Network`]: ZoteroApiError::Network
+    #[inline]
     pub async fn manage_collection_items<K: AsRef<str>, V: AsRef<str>>(
         &self,
         collection_key: K,
@@ -159,13 +191,17 @@ impl ZoteroClient {
     }
 
     /// Permanently deletes the collection identified by `collection_key`.
-    #[inline]
+    ///
     /// # Errors
     ///
-    /// Returns [`ZoteroApiError::NotFound`] if no collection with
-    /// `collection_key` exists, or
-    /// [`ZoteroApiError::LocalApi`]/[`ZoteroApiError::Network`] if the
-    /// request fails.
+    /// - [`NotFound`] if no collection with `collection_key` exists
+    /// - [`LocalApi`] if Zotero returns a non-2xx status
+    /// - [`Network`] on connection failure
+    ///
+    /// [`NotFound`]: ZoteroApiError::NotFound
+    /// [`LocalApi`]: ZoteroApiError::LocalApi
+    /// [`Network`]: ZoteroApiError::Network
+    #[inline]
     pub async fn delete_collection<K: AsRef<str>>(
         &self,
         collection_key: K,
@@ -181,16 +217,22 @@ impl ZoteroClient {
 
     /// Updates a collection's name and/or parent.
     ///
-    /// Pass `None` for `name` to keep the current name, or `None` for
-    /// `parent` to keep the current parent. Pass
-    /// [`CollectionParent::TopLevel`] to move to the root.
-    #[inline]
+    /// Pass `None` for `name` to keep the current name, or `None` for `parent`
+    /// to keep the current parent. Pass [`CollectionParent::TopLevel`] to move
+    /// to the root.
+    ///
     /// # Errors
     ///
-    /// Returns [`ZoteroApiError::NotFound`] if no collection with
-    /// `collection_key` exists, or
-    /// [`ZoteroApiError::LocalApi`]/[`ZoteroApiError::Network`]/
-    /// [`ZoteroApiError::Json`] if the request fails.
+    /// - [`NotFound`] if no collection with `collection_key` exists
+    /// - [`LocalApi`] if Zotero returns a non-2xx status
+    /// - [`Network`] on connection failure
+    /// - [`Json`] if the response cannot be deserialized
+    ///
+    /// [`NotFound`]: ZoteroApiError::NotFound
+    /// [`LocalApi`]: ZoteroApiError::LocalApi
+    /// [`Network`]: ZoteroApiError::Network
+    /// [`Json`]: ZoteroApiError::Json
+    #[inline]
     pub async fn update_collection<K: AsRef<str>>(
         &self,
         collection_key: K,
@@ -225,11 +267,15 @@ impl ZoteroClient {
     ///
     /// Pass `version` as the current library version for optimistic
     /// concurrency.
-    #[inline]
+    ///
     /// # Errors
     ///
-    /// Returns [`ZoteroApiError::LocalApi`]/[`ZoteroApiError::Network`] if
-    /// Zotero rejects the deletion request.
+    /// - [`LocalApi`] if Zotero rejects the deletion request
+    /// - [`Network`] on connection failure
+    ///
+    /// [`LocalApi`]: ZoteroApiError::LocalApi
+    /// [`Network`]: ZoteroApiError::Network
+    #[inline]
     pub async fn delete_collections<K: AsRef<str>, V: Into<u64>>(
         &self,
         keys: &[K],

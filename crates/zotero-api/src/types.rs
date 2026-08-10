@@ -31,8 +31,9 @@ open_string_enum! {
     /// Zotero item kind carried in the `itemType` field.
     ///
     /// Only variants this crate branches on are named explicitly. Every other
-    /// Zotero item type, such as `webpage`, `bookSection`, or `thesis`, round-trips
-    /// through [`ItemType::Other`] with its original API string preserved.
+    /// Zotero item type, such as `webpage`, `bookSection`, or `thesis`,
+    /// round-trips through [`ItemType::Other`] with its original API string
+    /// preserved.
     pub enum ItemType {
         /// Annotation item (`annotation`).
         Annotation => "annotation",
@@ -146,8 +147,8 @@ impl Default for ItemType {
 open_string_enum! {
     /// PDF annotation kind carried in the `annotationType` field.
     ///
-    /// Falls back to [`AnnotationType::Other`] for annotation kinds this crate does
-    /// not create, such as `image` or `ink`.
+    /// Falls back to [`AnnotationType::Other`] for annotation kinds this crate
+    /// does not create, such as `image` or `ink`.
     pub enum AnnotationType {
         /// Text highlight annotation (`highlight`).
         Highlight => "highlight",
@@ -161,9 +162,9 @@ open_string_enum! {
 open_string_enum! {
     /// Creator role carried in the `creatorType` field.
     ///
-    /// Zotero defines many item-type-specific creator roles. The common roles are
-    /// named explicitly, while [`CreatorType::Other`] preserves anything else for
-    /// round-tripping.
+    /// Zotero defines many item-type-specific creator roles. The common roles
+    /// are named explicitly, while [`CreatorType::Other`] preserves anything
+    /// else for round-tripping.
     pub enum CreatorType {
         /// Primary author or creator (`author`).
         Author => "author",

@@ -11,8 +11,8 @@ use crate::{
 
 /// A saved search that stores query conditions server-side.
 ///
-/// Saved searches persist filter criteria on the Zotero server,
-/// allowing repeated execution without resending the query.
+/// Saved searches persist filter criteria on the Zotero server, allowing
+/// repeated execution without resending the query.
 ///
 /// # Examples
 ///
@@ -42,11 +42,12 @@ pub struct SavedSearch {
 
 impl ZoteroClient {
     /// Lists all [`SavedSearch`] objects in the target library.
-    #[inline]
+    ///
     /// # Errors
     ///
-    /// Returns [`ZoteroApiError::LocalApi`], [`ZoteroApiError::Network`],
-    /// or [`ZoteroApiError::Json`] if the request fails.
+    /// Returns [`ZoteroApiError::LocalApi`], [`ZoteroApiError::Network`], or
+    /// [`ZoteroApiError::Json`] if the request fails.
+    #[inline]
     pub async fn list_searches(
         &self,
     ) -> Result<Vec<SavedSearch>, ZoteroApiError> {
@@ -56,11 +57,12 @@ impl ZoteroClient {
     }
 
     /// Fetches a single [`SavedSearch`] by its key.
-    #[inline]
+    ///
     /// # Errors
     ///
-    /// Returns [`ZoteroApiError::LocalApi`], [`ZoteroApiError::Network`],
-    /// or [`ZoteroApiError::Json`] if the request fails.
+    /// Returns [`ZoteroApiError::LocalApi`], [`ZoteroApiError::Network`], or
+    /// [`ZoteroApiError::Json`] if the request fails.
+    #[inline]
     pub async fn get_search<K: AsRef<str>>(
         &self,
         key: K,
@@ -74,13 +76,14 @@ impl ZoteroClient {
     /// Executes a [`SavedSearch`] server-side and returns matching
     /// [`ZoteroItem`]s.
     ///
-    /// The server evaluates the stored query conditions against the library
-    /// and returns all items that match.
-    #[inline]
+    /// The server evaluates the stored query conditions against the library and
+    /// returns all items that match.
+    ///
     /// # Errors
     ///
     /// Returns [`ZoteroApiError::LocalApi`], [`ZoteroApiError::Network`],
     /// or [`ZoteroApiError::Json`] if the request fails.
+    #[inline]
     pub async fn execute_saved_search<K: AsRef<str>>(
         &self,
         key: K,
@@ -95,11 +98,12 @@ impl ZoteroClient {
     ///
     /// Each element of `searches` must be a JSON object with `"name"` and
     /// `"conditions"` fields matching the Zotero search format.
-    #[inline]
+    ///
     /// # Errors
     ///
     /// Returns [`ZoteroApiError::LocalApi`] if Zotero rejects the creation
     /// request, or [`ZoteroApiError::Network`] if the request fails.
+    #[inline]
     pub async fn create_searches(
         &self,
         searches: &[serde_json::Value],
@@ -113,11 +117,12 @@ impl ZoteroClient {
     }
 
     /// Batch-deletes saved searches by key.
-    #[inline]
+    ///
     /// # Errors
     ///
-    /// Returns [`ZoteroApiError::LocalApi`] or [`ZoteroApiError::Network`]
-    /// if Zotero rejects the deletion request.
+    /// Returns [`ZoteroApiError::LocalApi`] or [`ZoteroApiError::Network`] if
+    /// Zotero rejects the deletion request.
+    #[inline]
     pub async fn delete_searches<K: AsRef<str>, V: Into<u64>>(
         &self,
         keys: &[K],

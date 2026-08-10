@@ -44,8 +44,8 @@ pub enum ZoteroApiError {
     /// matches the `If-Unmodified-Since-Version` header (HTTP 412).
     ///
     /// Another client modified the object since it was last fetched. Refetch
-    /// the object's current version and retry, or surface the conflict to
-    /// the user.
+    /// the object's current version and retry, or surface the conflict to the
+    /// user.
     #[error("Version conflict: {0}")]
     VersionConflict(String),
 

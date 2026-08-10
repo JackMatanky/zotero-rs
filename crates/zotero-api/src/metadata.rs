@@ -25,11 +25,12 @@ pub enum IdentifierKind {
 }
 
 /// Resolves a public identifier against default metadata APIs.
-#[inline]
+///
 /// # Errors
 ///
 /// Returns [`ZoteroApiError::NotFound`] if the identifier cannot be resolved by
 /// external services.
+#[inline]
 pub async fn resolve_metadata(
     http: &reqwest::Client,
     kind: IdentifierKind,

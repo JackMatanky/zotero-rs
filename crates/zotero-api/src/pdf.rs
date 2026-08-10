@@ -128,8 +128,8 @@ pub fn extract_pdf_outline(
     }
     let doc = lopdf::Document::load(file_path)
         .map_err(|e| ZoteroApiError::PdfExtract(e.to_string()))?;
-    // ponytail: any get_toc() failure → empty outline; load already validated
-    // the file, and a corrupt outline silently becomes "no outline"
+    // NOTE: any get_toc() failure → empty outline; load already validated the
+    // file, and a corrupt outline silently becomes "no outline"
     Ok(doc
         .get_toc()
         .map(|toc| toc.toc)

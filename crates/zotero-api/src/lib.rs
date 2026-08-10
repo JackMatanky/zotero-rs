@@ -19,13 +19,13 @@
 //!
 //! # Features
 //!
-//! | Feature     | Description                                            |
-//! |-------------|--------------------------------------------------------|
-//! | `metadata`  | Enables `resolve_metadata` for identifier resolution.  |
+//! | Feature     | Description                                             |
+//! | ----------- | ------------------------------------------------------- |
+//! | `metadata`  | Enables `resolve_metadata` for identifier resolution.   |
 //! | `pdf`       | Enables PDF annotation extraction and export.           |
-//! | `sqlite`    | Enables `LocalZoteroDb` for direct SQLite access.      |
+//! | `sqlite`    | Enables `LocalZoteroDb` for direct SQLite access.       |
 //! | `test-util` | Exposes test helpers and fixtures for downstream tests. |
-//! | `full`      | Enables all optional features.                         |
+//! | `full`      | Enables all optional features.                          |
 //!
 //! # Examples
 //!

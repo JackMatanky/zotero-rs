@@ -54,8 +54,8 @@ pub(super) struct ItemsPage {
 
 /// Target library for API requests (user or group).
 ///
-/// Default is [`User(0)`](LibraryTarget::User), which targets the active
-/// local user's library.
+/// Default is [`User(0)`](LibraryTarget::User), which targets the active local
+/// user's library.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum LibraryTarget {
@@ -122,8 +122,8 @@ impl Default for ZoteroClient {
 impl ZoteroClient {
     /// Creates a new [`ZoteroClient`] targeting the given `base_url`.
     ///
-    /// Falls back to `http://127.0.0.1:23119/api` if `base_url` is empty.
-    /// The default library target is
+    /// Falls back to `http://127.0.0.1:23119/api` if `base_url` is empty. The
+    /// default library target is
     /// [`LibraryTarget::User(0)`](LibraryTarget::User).
     ///
     /// # Examples
@@ -302,8 +302,11 @@ impl ZoteroClient {
     ///
     /// # Errors
     ///
-    /// Returns [`ZoteroApiError::LocalApi`] if Zotero rejects the request, or
-    /// [`ZoteroApiError::Network`] if the request fails.
+    /// - [`LocalApi`] if Zotero rejects the request
+    /// - [`Network`] if the request fails
+    ///
+    /// [`LocalApi`]: ZoteroApiError::LocalApi
+    /// [`Network`]: ZoteroApiError::Network
     ///
     /// # Examples
     ///
@@ -342,6 +345,7 @@ impl ZoteroClient {
     }
 
     /// Fetches every page of a paginated list endpoint.
+    ///
     /// # Errors
     ///
     /// Returns [`ZoteroApiError::LocalApi`]/[`ZoteroApiError::Network`]/
@@ -424,9 +428,9 @@ impl ZoteroClient {
 
 /// Fluent builder for HTTP requests to Zotero API endpoints.
 ///
-/// Created via [`ZoteroClient::get`], [`ZoteroClient::post`], etc. Chain
-/// query parameters, headers, and JSON bodies, then call
-/// [`send`](Self::send) or [`send_raw`](Self::send_raw).
+/// Created via [`ZoteroClient::get`], [`ZoteroClient::post`], etc. Chain query
+/// parameters, headers, and JSON bodies, then call [`send`](Self::send) or
+/// [`send_raw`](Self::send_raw).
 pub struct ApiRequestBuilder<'a> {
     client: &'a ZoteroClient,
     method: reqwest::Method,
@@ -642,14 +646,14 @@ impl<'a> ApiRequestBuilder<'a> {
     /// Sends the request, returning [`ZoteroApiError::NotFound`] for 404
     /// responses instead of decoding.
     ///
-    /// The `missing` value becomes the error message for 404s. All other
-    /// status codes behave like [`send`](Self::send).
+    /// The `missing` value becomes the error message for 404s. All other status
+    /// codes behave like [`send`](Self::send).
     ///
     /// # Errors
     ///
     /// Returns [`ZoteroApiError::NotFound`] for 404,
-    /// [`ZoteroApiError::LocalApi`] or [`ZoteroApiError::VersionConflict`]
-    /// for other non-2xx statuses, or [`ZoteroApiError::Network`] /
+    /// [`ZoteroApiError::LocalApi`] or [`ZoteroApiError::VersionConflict`] for
+    /// other non-2xx statuses, or [`ZoteroApiError::Network`] /
     /// [`ZoteroApiError::Json`] if the request fails or the body cannot be
     /// decoded.
     #[inline]
@@ -675,8 +679,8 @@ impl<'a> ApiRequestBuilder<'a> {
     /// # Errors
     ///
     /// Returns [`ZoteroApiError::LocalApi`] or
-    /// [`ZoteroApiError::VersionConflict`] if the response status is not
-    /// 2xx, or [`ZoteroApiError::Network`] if the request fails.
+    /// [`ZoteroApiError::VersionConflict`] if the response status is not 2xx,
+    /// or [`ZoteroApiError::Network`] if the request fails.
     #[inline]
     pub async fn send_unit(&self) -> Result<(), ZoteroApiError> {
         ensure_success(self.send_raw().await?).await?;
@@ -731,12 +735,12 @@ pub(super) fn add_pagination(url: &str, start: usize, limit: usize) -> String {
     format!("{url}{sep}start={start}&limit={limit}")
 }
 
-/// Decodes `resp`'s JSON body as `T`, or calls `refetch` if the body is
-/// empty or undecodable.
+/// Decodes `resp`'s JSON body as `T`, or calls `refetch` if the body is empty
+/// or undecodable.
 ///
 /// Zotero's Local API returns an empty body on successful single-object
-/// `PATCH`/`PUT`, so this function refetches the object to return its
-/// current representation.
+/// `PATCH`/`PUT`, so this function refetches the object to return its current
+/// representation.
 pub(super) async fn decode_or_refetch<T, F, Fut>(
     resp: reqwest::Response,
     refetch: F,

@@ -30,11 +30,12 @@ pub struct DeletedObjectsResponse {
 impl ZoteroClient {
     /// Retrieves deleted library objects (items, collections, searches, tags)
     /// since `since`.
-    #[inline]
+    ///
     /// # Errors
     ///
     /// Returns [`ZoteroApiError::LocalApi`]/[`ZoteroApiError::Network`]/
     /// [`ZoteroApiError::Json`] if the request fails.
+    #[inline]
     pub async fn get_deleted<K: Into<u64>>(
         &self,
         since: K,
