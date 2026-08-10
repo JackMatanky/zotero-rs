@@ -14,6 +14,9 @@ use thiserror::Error;
 /// ```rust
 /// use zotero_api::ZoteroApiError;
 ///
+/// let result: Result<(), ZoteroApiError> =
+///     Err(ZoteroApiError::NotFound("item ABC12345".to_owned()));
+///
 /// match result {
 ///     Err(ZoteroApiError::NotFound(id)) => println!("not found: {id}"),
 ///     Err(ZoteroApiError::VersionConflict(_)) => println!("conflict, retry"),
@@ -49,7 +52,7 @@ pub enum ZoteroApiError {
     #[error("Version conflict: {0}")]
     VersionConflict(String),
 
-    /// Better BibTeX JSON-RPC endpoint returned an error or invalid response.
+    /// Better `BibTeX` JSON-RPC endpoint returned an error or invalid response.
     #[error("Better BibTeX error: {0}")]
     BetterBibTeX(String),
 
@@ -70,11 +73,11 @@ pub enum ZoteroApiError {
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
 
-    /// Local Zotero SQLite database could not be located or read.
+    /// Local Zotero `SQLite` database could not be located or read.
     #[error("Local database error: {0}")]
     LocalDb(String),
 
-    /// SQLite query or connection failed. Requires the `sqlite` feature.
+    /// `SQLite` query or connection failed. Requires the `sqlite` feature.
     #[cfg(feature = "sqlite")]
     #[error("SQLite error: {0}")]
     Sqlite(#[from] sqlx::Error),

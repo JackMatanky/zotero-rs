@@ -1,4 +1,4 @@
-//! Serialization models and JSON-RPC 2.0 envelopes for the Better BibTeX API.
+//! Serialization models and JSON-RPC 2.0 envelopes for the Better `BibTeX` API.
 //!
 //! Defines the request and response shapes, content types, and new types used
 //! when serializing RPC calls for [`BetterBibtexClient`] and deserializing
@@ -51,7 +51,7 @@ string_newtype!(
 );
 
 impl CollectionPath {
-    /// Returns the personal library root path (`"//"`) used by Better BibTeX
+    /// Returns the personal library root path (`"//"`) used by Better `BibTeX`
     /// collection APIs.
     #[must_use]
     #[inline]
@@ -63,7 +63,7 @@ impl CollectionPath {
 string_newtype!(
     pub TranslatorName,
     concat!(
-        "Better BibTeX translator name or GUID, such as `Better BibTeX`, ",
+        "Better `BibTeX` translator name or GUID, such as `Better BibTeX`, ",
         "`Better BibLaTeX`, or `Better CSL JSON`."
     ),
 );
@@ -73,7 +73,7 @@ string_newtype!(
 );
 string_newtype!(
     pub ExportFilePath,
-    "Absolute filesystem path for a Better BibTeX auto-export output file.",
+    "Absolute filesystem path for a Better `BibTeX` auto-export output file.",
 );
 string_newtype!(
     pub CslStyleId,
@@ -134,19 +134,19 @@ pub struct AutoExportAddRequest {
     /// Target collection path to export, with `"//"` selecting the personal
     /// library root.
     pub collection: CollectionPath,
-    /// Better BibTeX translator name or GUID.
+    /// Better `BibTeX` translator name or GUID.
     pub translator: TranslatorName,
     /// Destination output filepath. Requires filepath features enabled and an
     /// allowed export directory.
     pub path: ExportFilePath,
-    /// Optional Better BibTeX display options passed to the translator.
+    /// Optional Better `BibTeX` display options passed to the translator.
     pub display_options: Option<HashMap<String, bool>>,
-    /// Whether Better BibTeX should replace an existing matching auto-export
+    /// Whether Better `BibTeX` should replace an existing matching auto-export
     /// configuration.
     pub replace: Option<bool>,
 }
 
-/// Outbound JSON-RPC 2.0 request envelope sent to Better BibTeX.
+/// Outbound JSON-RPC 2.0 request envelope sent to Better `BibTeX`.
 #[derive(Debug, Serialize)]
 pub(crate) struct JsonRpcRequest<'a, T: Serialize> {
     /// JSON-RPC protocol version (always `"2.0"`).
@@ -159,7 +159,7 @@ pub(crate) struct JsonRpcRequest<'a, T: Serialize> {
     pub(crate) id: u64,
 }
 
-/// Inbound JSON-RPC 2.0 response envelope returned by Better BibTeX.
+/// Inbound JSON-RPC 2.0 response envelope returned by Better `BibTeX`.
 ///
 /// Carries either a successful `result` payload or a [`JsonRpcError`].
 #[derive(Debug, Deserialize)]
@@ -183,7 +183,7 @@ pub(crate) struct JsonRpcError {
     pub(crate) data: Option<serde_json::Value>,
 }
 
-/// Maps a Zotero [`ItemKey`] to its assigned Better BibTeX [`CitationKey`].
+/// Maps a Zotero [`ItemKey`] to its assigned Better `BibTeX` [`CitationKey`].
 ///
 /// A value of `None` indicates the item has no generated citation key.
 ///

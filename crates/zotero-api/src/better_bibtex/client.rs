@@ -1,4 +1,4 @@
-//! Async HTTP client for the Better BibTeX Zotero plugin JSON-RPC 2.0 API.
+//! Async HTTP client for the Better `BibTeX` Zotero plugin JSON-RPC 2.0 API.
 
 use serde::Serialize;
 use serde_json::{Value, json};
@@ -13,18 +13,18 @@ use crate::{
     keys::{CitationKey, ItemKey},
 };
 
-/// Client for issuing JSON-RPC 2.0 requests to the Better BibTeX plugin.
+/// Client for issuing JSON-RPC 2.0 requests to the Better `BibTeX` plugin.
 ///
-/// The client talks to the local Better BibTeX HTTP endpoint exposed by Zotero,
-/// usually `http://127.0.0.1:23119/better-bibtex/json-rpc`. It can:
+/// The client talks to the local Better `BibTeX` HTTP endpoint exposed by
+/// Zotero, usually `http://127.0.0.1:23119/better-bibtex/json-rpc`. It can:
 ///
-/// - map Zotero item keys to Better BibTeX citation keys
-/// - export items with a Better BibTeX translator
+/// - map Zotero item keys to Better `BibTeX` citation keys
+/// - export items with a Better `BibTeX` translator
 /// - generate formatted bibliographies
 /// - regenerate citation keys
-/// - register Better BibTeX auto-export jobs
-/// - scan LaTeX `.aux` files for cited references
-/// - search Better BibTeX indexes
+/// - register Better `BibTeX` auto-export jobs
+/// - scan `LaTeX` `.aux` files for cited references
+/// - search Better `BibTeX` indexes
 /// - fetch Pandoc citeproc filter metadata
 ///
 /// # Examples
@@ -32,8 +32,8 @@ use crate::{
 /// ```rust,no_run
 /// # async fn run() -> Result<(), zotero_api::ZoteroApiError> {
 /// use zotero_api::{
+///     CitationKey,
 ///     better_bibtex::{BetterBibtexClient, TranslatorName},
-///     keys::CitationKey,
 /// };
 ///
 /// let client = BetterBibtexClient::default();
@@ -64,7 +64,7 @@ impl Default for BetterBibtexClient {
 impl BetterBibtexClient {
     /// Creates a new [`BetterBibtexClient`] with the specified base URL.
     ///
-    /// An empty `base_url` falls back to the local Better BibTeX default.
+    /// An empty `base_url` falls back to the local Better `BibTeX` default.
     #[inline]
     pub fn new<S: Into<String>>(base_url: S) -> Self {
         let base_url = base_url.into();
@@ -86,7 +86,7 @@ impl BetterBibtexClient {
         self
     }
 
-    /// Maps Zotero `item_keys` to their current Better BibTeX citation keys.
+    /// Maps Zotero `item_keys` to their current Better `BibTeX` citation keys.
     ///
     /// # Errors
     ///
@@ -127,7 +127,7 @@ impl BetterBibtexClient {
 
     /// Generates a formatted bibliography string for `citekeys`.
     ///
-    /// When `format` is [`None`], Better BibTeX uses its configured default
+    /// When `format` is [`None`], Better `BibTeX` uses its configured default
     /// bibliography output. Pass [`BibliographyFormat`] to choose the content
     /// type, CSL style, locale, or quick-copy behavior for this call.
     ///
@@ -173,11 +173,11 @@ impl BetterBibtexClient {
         self.call_rpc("item.pin", params).await
     }
 
-    /// Registers a new automatic export task in the Better BibTeX plugin.
+    /// Registers a new automatic export task in the Better `BibTeX` plugin.
     ///
     /// Set [`AutoExportAddRequest::replace`] to [`Some`] to send the Better
-    /// BibTeX `replace` flag. `Some(true)` replaces an existing matching
-    /// auto-export configuration. `Some(false)` asks Better BibTeX not to
+    /// `BibTeX` `replace` flag. `Some(true)` replaces an existing matching
+    /// auto-export configuration. `Some(false)` asks Better `BibTeX` not to
     /// replace one. [`None`] omits the flag and leaves the plugin default in
     /// control.
     ///
@@ -214,10 +214,10 @@ impl BetterBibtexClient {
         self.call_rpc("autoexport.add", params).await
     }
 
-    /// Scans a LaTeX `.aux` file and imports cited references into
+    /// Scans a `LaTeX` `.aux` file and imports cited references into
     /// `collection`.
     ///
-    /// Better BibTeX reads `\citation{...}` entries from the `.aux` file at
+    /// Better `BibTeX` reads `\citation{...}` entries from the `.aux` file at
     /// `aux_path`, resolves the citation keys, and adds matching Zotero items
     /// to `collection`.
     ///
@@ -282,7 +282,7 @@ impl BetterBibtexClient {
     ///
     /// # Errors
     ///
-    /// - [`BetterBibTeX`] if Better BibTeX returns a non-success HTTP status,
+    /// - [`BetterBibTeX`] if Better `BibTeX` returns a non-success HTTP status,
     ///   an unsupported JSON-RPC version, an RPC error object, or no result
     /// - [`Network`] if the HTTP request fails or the response body cannot be
     ///   decoded
