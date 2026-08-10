@@ -338,61 +338,15 @@ impl BetterBibtexClient {
 
 #[cfg(test)]
 mod tests {
-    mod fixtures {
-        use std::{
-            io::{Read, Write},
-            net::TcpListener,
-            sync::mpsc::{self, Receiver},
-        };
-
-        pub(super) fn http_response(status: &str, body: &str) -> String {
-            format!(
-                "HTTP/1.1 {status}\r\nContent-Length: {}\r\nContent-Type: \
-                 application/json\r\nConnection: close\r\n\r\n{body}",
-                body.len()
-            )
-        }
-
-        pub(super) fn mock_server(responses: Vec<String>) -> String {
-            mock_server_with_requests(responses).0
-        }
-
-        pub(super) fn mock_server_with_requests(
-            responses: Vec<String>,
-        ) -> (String, Receiver<String>) {
-            let listener =
-                TcpListener::bind("127.0.0.1:0").expect("bind listener");
-            let addr = listener.local_addr().expect("local addr");
-            let (tx, rx) = mpsc::channel();
-            std::thread::spawn(move || {
-                for response in responses {
-                    let (mut stream, _) =
-                        listener.accept().expect("accept connection");
-                    let mut buf = vec![0_u8; 4096];
-                    let n = stream.read(&mut buf).expect("read request");
-                    let _ = tx.send(
-                        String::from_utf8_lossy(
-                            buf.get(..n).unwrap_or_default(),
-                        )
-                        .into_owned(),
-                    );
-                    let _ = stream.write_all(response.as_bytes());
-                }
-            });
-            (format!("http://{addr}"), rx)
-        }
-    }
-
     mod call_rpc {
-        use super::{
-            super::*,
-            fixtures::{http_response, mock_server},
-        };
+        use super::super::*;
+        use crate::client::test_http::{MockServer, http_response};
 
         #[tokio::test]
         async fn returns_better_bibtex_error_when_http_status_is_non_success() {
-            let base = mock_server(vec![http_response("404 Not Found", "")]);
-            let client = BetterBibtexClient::new(base);
+            let server =
+                MockServer::new(vec![http_response("404 Not Found", "")]);
+            let client = BetterBibtexClient::new(server.url());
 
             let err = client
                 .export_items(
@@ -411,11 +365,11 @@ mod tests {
         #[tokio::test]
         async fn returns_better_bibtex_error_when_response_carries_an_rpc_error()
          {
-            let base = mock_server(vec![http_response(
+            let server = MockServer::new(vec![http_response(
                 "200 OK",
                 r#"{"jsonrpc":"2.0","error":{"code":-32600,"message":"boom"}}"#,
             )]);
-            let client = BetterBibtexClient::new(base);
+            let client = BetterBibtexClient::new(server.url());
 
             let err = client
                 .export_items(

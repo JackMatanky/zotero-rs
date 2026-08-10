@@ -26,6 +26,16 @@ pub struct RelatedItem {
     pub item_type: ItemType,
 }
 
+/// Direction for updating a bidirectional `dc:relation` link between two
+/// items.
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub(crate) enum RelationAction {
+    /// Add each item's URI to the other's `dc:relation` map.
+    Add,
+    /// Remove each item's URI from the other's `dc:relation` map.
+    Remove,
+}
+
 impl ZoteroClient {
     /// Fetches all related items linked to `item_key` via `dc:relation` URIs.
     ///
@@ -97,37 +107,7 @@ impl ZoteroClient {
                 "cannot relate an item to itself".to_owned(),
             ));
         }
-        let item_key_a = ItemKey::from(key_a);
-        let item_key_b = ItemKey::from(key_b);
-        let a_item = self.get_item(key_a).await?;
-        let b_item = self.get_item(key_b).await?;
-        let a_relations = apply_relations(
-            &a_item.data.relations,
-            &[RelationUri::from(&item_key_b)],
-            &[],
-        );
-        let b_relations = apply_relations(
-            &b_item.data.relations,
-            &[RelationUri::from(&item_key_a)],
-            &[],
-        );
-        self.update_item(
-            key_a,
-            serde_json::json!({
-                "relations": a_relations,
-                "version": a_item.version,
-            }),
-        )
-        .await?;
-        self.update_item(
-            key_b,
-            serde_json::json!({
-                "relations": b_relations,
-                "version": b_item.version,
-            }),
-        )
-        .await?;
-        Ok(())
+        self.set_relation(key_a, key_b, RelationAction::Add).await
     }
 
     /// Removes the relation between item `a` and item `b`.
@@ -150,20 +130,31 @@ impl ZoteroClient {
         a: K,
         b: V,
     ) -> Result<(), ZoteroApiError> {
-        let key_a = a.as_ref();
-        let key_b = b.as_ref();
+        self.set_relation(a.as_ref(), b.as_ref(), RelationAction::Remove).await
+    }
+
+    /// Adds or removes the bidirectional `dc:relation` link between items
+    /// `key_a` and `key_b`, depending on `action`.
+    async fn set_relation(
+        &self,
+        key_a: &str,
+        key_b: &str,
+        action: RelationAction,
+    ) -> Result<(), ZoteroApiError> {
         let item_key_a = ItemKey::from(key_a);
         let item_key_b = ItemKey::from(key_b);
         let a_item = self.get_item(key_a).await?;
         let b_item = self.get_item(key_b).await?;
-        let a_relations =
-            apply_relations(&a_item.data.relations, &[], &[RelationUri::from(
-                &item_key_b,
-            )]);
-        let b_relations =
-            apply_relations(&b_item.data.relations, &[], &[RelationUri::from(
-                &item_key_a,
-            )]);
+        let a_relations = apply_relations(
+            &a_item.data.relations,
+            action,
+            &RelationUri::from(&item_key_b),
+        );
+        let b_relations = apply_relations(
+            &b_item.data.relations,
+            action,
+            &RelationUri::from(&item_key_a),
+        );
         self.update_item(
             key_a,
             serde_json::json!({
@@ -204,21 +195,24 @@ pub(crate) fn parse_relation_keys(
     }
 }
 
-/// Returns a new `relations` JSON value with the given URIs added and removed.
+/// Returns a new `relations` JSON value with `uri` added or removed,
+/// depending on `action`.
 pub(crate) fn apply_relations(
     current: &serde_json::Value,
-    add: &[RelationUri],
-    remove: &[RelationUri],
+    action: RelationAction,
+    uri: &RelationUri,
 ) -> serde_json::Value {
     let mut uris: BTreeSet<String> = parse_relation_keys(current)
         .into_iter()
         .map(|u| u.as_str().to_owned())
         .collect();
-    for uri in add {
-        uris.insert(uri.as_str().to_owned());
-    }
-    for uri in remove {
-        uris.remove(uri.as_str());
+    match action {
+        RelationAction::Add => {
+            uris.insert(uri.as_str().to_owned());
+        }
+        RelationAction::Remove => {
+            uris.remove(uri.as_str());
+        }
     }
     let mut result: serde_json::Map<String, serde_json::Value> =
         current.as_object().cloned().unwrap_or_default();
@@ -282,11 +276,22 @@ mod tests {
         fn adds_new_uri() {
             let result = super::apply_relations(
                 &serde_json::json!({}),
-                &[RelationUri::from(URI_B)],
-                &[],
+                RelationAction::Add,
+                &RelationUri::from(URI_B),
             );
 
             assert_eq!(result, serde_json::json!({ "dc:relation": [URI_B] }));
+        }
+
+        #[test]
+        fn removes_existing_uri() {
+            let result = super::apply_relations(
+                &serde_json::json!({ "dc:relation": [URI_A, URI_B] }),
+                RelationAction::Remove,
+                &RelationUri::from(URI_B),
+            );
+
+            assert_eq!(result, serde_json::json!({ "dc:relation": [URI_A] }));
         }
     }
 

@@ -242,47 +242,15 @@ impl BetterNotesClient {
 
 #[cfg(test)]
 mod tests {
-    mod fixtures {
-        use std::{
-            io::{Read, Write},
-            net::TcpListener,
-        };
-
-        pub(super) fn http_response(status: &str, body: &str) -> String {
-            format!(
-                "HTTP/1.1 {status}\r\nContent-Length: {}\r\nContent-Type: \
-                 application/json\r\nConnection: close\r\n\r\n{body}",
-                body.len()
-            )
-        }
-
-        pub(super) fn mock_server(responses: Vec<String>) -> String {
-            let listener =
-                TcpListener::bind("127.0.0.1:0").expect("bind listener");
-            let addr = listener.local_addr().expect("local addr");
-            std::thread::spawn(move || {
-                for response in responses {
-                    let (mut stream, _) =
-                        listener.accept().expect("accept connection");
-                    let mut buf = [0_u8; 1024];
-                    let _ = stream.read(&mut buf);
-                    let _ = stream.write_all(response.as_bytes());
-                }
-            });
-            format!("http://{addr}")
-        }
-    }
-
     mod post_json {
-        use super::{
-            super::*,
-            fixtures::{http_response, mock_server},
-        };
+        use super::super::*;
+        use crate::client::test_http::{MockServer, http_response};
 
         #[tokio::test]
         async fn returns_better_notes_error_when_response_is_non_success() {
-            let base = mock_server(vec![http_response("400 Bad Request", "")]);
-            let client = BetterNotesClient::new(base);
+            let server =
+                MockServer::new(vec![http_response("400 Bad Request", "")]);
+            let client = BetterNotesClient::new(server.url());
 
             let err = client.export("NOTE1", None).await.unwrap_err();
 

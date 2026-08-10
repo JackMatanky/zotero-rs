@@ -6,7 +6,7 @@ use crate::{
     client::{ZoteroClient, ZoteroResponse},
     errors::ZoteroApiError,
     keys::TagName,
-    objects::ZoteroTag,
+    objects::{ZoteroItem, ZoteroTag},
 };
 
 impl ZoteroClient {
@@ -62,14 +62,8 @@ impl ZoteroClient {
     ) -> Result<usize, ZoteroApiError> {
         let mut count: usize = 0;
         for key in item_keys {
-            let key_str = key.as_ref();
-            let item = self.get_item(key_str).await?;
-            let new_tags = diff_tags(item.data.tags, add_tags, remove_tags);
-            let patch_payload = serde_json::json!({
-                "tags": new_tags,
-                "version": item.version,
-            });
-            self.update_item(key_str, patch_payload).await?;
+            let item = self.get_item(key.as_ref()).await?;
+            self.apply_tag_patch(item, add_tags, remove_tags).await?;
             count = count.saturating_add(1);
         }
         Ok(count)
@@ -100,17 +94,29 @@ impl ZoteroClient {
         let old_tag_name = TagName::from(old);
         let mut count: usize = 0;
         for item in items {
-            let new_tags = diff_tags(
-                item.data.tags,
+            self.apply_tag_patch(
+                item,
                 std::slice::from_ref(&new),
                 std::slice::from_ref(&old_tag_name),
-            );
-            let patch =
-                serde_json::json!({"tags": new_tags, "version": item.version});
-            self.update_item(item.key.as_str(), patch).await?;
+            )
+            .await?;
             count = count.saturating_add(1);
         }
         Ok(count)
+    }
+
+    /// Applies a tag diff to `item`'s existing tags and `PATCH`es it.
+    async fn apply_tag_patch(
+        &self,
+        item: ZoteroItem,
+        add: &[TagName],
+        remove: &[TagName],
+    ) -> Result<(), ZoteroApiError> {
+        let new_tags = diff_tags(item.data.tags, add, remove);
+        let patch =
+            serde_json::json!({ "tags": new_tags, "version": item.version });
+        self.update_item(item.key, patch).await?;
+        Ok(())
     }
 
     /// Deletes tags by exact name from the entire library.

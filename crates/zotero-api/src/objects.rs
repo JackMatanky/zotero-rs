@@ -115,7 +115,7 @@ impl ItemLinks {
     /// Returns the link object for `"self"`, `"alternate"`, or `"enclosure"`.
     #[must_use]
     #[inline]
-    pub fn get(&self, key: &str) -> Option<&serde_json::Value> {
+    fn get(&self, key: &str) -> Option<&serde_json::Value> {
         match key {
             "self" => self.self_link.as_ref(),
             "alternate" => self.alternate.as_ref(),
@@ -271,11 +271,6 @@ impl ZoteroItemData {
             "dateModified" => self.date_modified.as_deref(),
             _ => self.extra_fields.get(field).and_then(|v| v.as_str()),
         }
-    }
-
-    /// Alias for [`get_str`](Self::get_str).
-    pub fn get_field(&self, field: &str) -> Option<&str> {
-        self.get_str(field)
     }
 
     /// Inserts or overwrites a dynamic field in
