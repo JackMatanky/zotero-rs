@@ -584,11 +584,6 @@ fn paginate<T>(results: Vec<T>, offset: usize, limit: usize) -> SearchPage<T> {
     }
 }
 
-/// Returns true for items that are not attachments, notes, or annotations.
-fn is_searchable_item(item: &ZoteroItem) -> bool {
-    item.data.item_type.is_indexable()
-}
-
 fn matches_creator_full_name(
     creator: &crate::objects::ZoteroCreator,
     cond: &PreparedCondition<'_>,
@@ -726,7 +721,7 @@ impl<'a> QueryBuilder<'a> {
     /// Returns `true` if `item` is searchable and matches every configured
     /// condition per `join_mode`.
     fn matches(&self, item: &ZoteroItem) -> bool {
-        is_searchable_item(item)
+        item.data.item_type.is_indexable()
             && item_matches_conditions(item, &self.conditions, self.join_mode)
     }
 
