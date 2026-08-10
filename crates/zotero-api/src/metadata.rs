@@ -14,6 +14,21 @@
 //! Use [`resolve_metadata`] for normal resolution against the default services.
 //! Use [`resolve_metadata_with_urls`] when tests or offline tools need local
 //! service doubles.
+//!
+//! # Examples
+//!
+//! ```no_run
+//! use zotero_api::{IdentifierKind, ZoteroApiError, resolve_metadata};
+//!
+//! # async fn run() -> Result<(), ZoteroApiError> {
+//! let http = reqwest::Client::new();
+//! let draft =
+//!     resolve_metadata(&http, IdentifierKind::Doi, "10.1038/nphys1170")
+//!         .await?;
+//! assert_eq!(draft.doi, "10.1038/nphys1170");
+//! # Ok(())
+//! # }
+//! ```
 
 use serde::Deserialize;
 

@@ -1,4 +1,4 @@
-//! Settings management API wrapper.
+//! Settings operations for the Zotero Local HTTP API.
 
 use std::collections::HashMap;
 

@@ -2,7 +2,7 @@
 //!
 //! Provides enumerations for item types, annotation kinds, attachment storage
 //! modes, and collection parent relationships. Unknown API values are preserved
-//! in `Other` variants to ensure lossless round-tripping.
+//! in each enum's catch-all variant to ensure lossless round-tripping.
 //!
 //! # Main Types
 //!

@@ -1,8 +1,8 @@
 //! Zotero Local API JSON objects and payload data structures.
 //!
-//! Defines serde deserialization shapes for Zotero items, collections,
-//! creators, tags, annotations, and local API availability status. These types
-//! form the core data model returned by Zotero HTTP endpoints.
+//! Defines serde serialization and deserialization shapes for Zotero items,
+//! collections, creators, tags, annotations, and local API availability status.
+//! These types form the core data model returned by Zotero HTTP endpoints.
 //!
 //! # Main Types
 //!

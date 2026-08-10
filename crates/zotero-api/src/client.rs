@@ -3,6 +3,19 @@
 //! [`ZoteroClient`] is the primary request builder and dispatcher for Zotero
 //! Local API operations. It handles library scoping, authentication headers,
 //! retry logic, error conversion, and JSON response decoding.
+//!
+//! # Examples
+//!
+//! ```no_run
+//! use zotero_api::{ZoteroApiError, ZoteroClient};
+//!
+//! # async fn run() -> Result<(), ZoteroApiError> {
+//! let client = ZoteroClient::new("http://127.0.0.1:23119/api");
+//! let status = client.check_status().await;
+//! assert!(status.url.contains("/api"));
+//! # Ok(())
+//! # }
+//! ```
 
 use std::{future::Future, time::Duration};
 

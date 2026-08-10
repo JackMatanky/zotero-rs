@@ -2,6 +2,15 @@
 //!
 //! [`ZoteroApiError`] wraps HTTP, network, serialization, and Zotero-specific
 //! errors into a single type returned by fallible operations in this crate.
+//!
+//! # Examples
+//!
+//! ```rust
+//! use zotero_api::ZoteroApiError;
+//!
+//! let err = ZoteroApiError::NotFound("item ABC12345".to_owned());
+//! assert!(matches!(err, ZoteroApiError::NotFound(_)));
+//! ```
 
 use thiserror::Error;
 
@@ -18,12 +27,18 @@ use thiserror::Error;
 ///     Err(ZoteroApiError::NotFound("item ABC12345".to_owned()));
 ///
 /// match result {
-///     Err(ZoteroApiError::NotFound(id)) => println!("not found: {id}"),
-///     Err(ZoteroApiError::VersionConflict(_)) => println!("conflict, retry"),
+///     Err(ZoteroApiError::NotFound(id)) => {
+///         println!("not found: {id}")
+///     }
+///     Err(ZoteroApiError::VersionConflict(_)) => {
+///         println!("conflict, retry")
+///     }
 ///     Err(ZoteroApiError::LocalApi {
 ///         status,
 ///         ..
-///     }) => println!("HTTP {status}"),
+///     }) => {
+///         println!("HTTP {status}")
+///     }
 ///     _ => {}
 /// }
 /// ```

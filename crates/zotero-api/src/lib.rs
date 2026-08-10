@@ -21,9 +21,9 @@
 //!
 //! | Feature     | Description                                             |
 //! | ----------- | ------------------------------------------------------- |
-//! | `metadata`  | Enables `resolve_metadata` for identifier resolution.   |
-//! | `pdf`       | Enables PDF annotation extraction and export.           |
-//! | `sqlite`    | Enables `LocalZoteroDb` for direct `SQLite` access.     |
+//! | `metadata`  | Enables metadata resolution from public identifiers.    |
+//! | `pdf`       | Enables PDF text and outline extraction.                |
+//! | `sqlite`    | Enables direct read-only `SQLite` access.               |
 //! | `test-util` | Exposes test helpers and fixtures for downstream tests. |
 //! | `full`      | Enables all optional features.                          |
 //!
@@ -41,6 +41,17 @@
 //! # Ok(())
 //! # }
 //! ```
+
+#![cfg_attr(
+    feature = "metadata",
+    doc = "\nWhen the `metadata` feature is enabled, [`resolve_metadata`] \
+           resolves DOI, arXiv, and ISBN identifiers."
+)]
+#![cfg_attr(
+    feature = "sqlite",
+    doc = "\nWhen the `sqlite` feature is enabled, [`LocalZoteroDb`] opens \
+           Zotero's local database in read-only mode."
+)]
 
 #[macro_use]
 mod macros;
