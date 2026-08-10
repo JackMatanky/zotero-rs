@@ -1,13 +1,13 @@
 #![cfg(feature = "pdf")]
-//! Local PDF extraction module.
+//! Extracts text and outlines from local PDF files.
 //!
-//! Extracts plain text (with optional page filtering) and bookmark outlines
-//! (tables of contents) from local PDF files.
+//! This module reads plain text, optionally filtered by page, and bookmark
+//! outlines from local PDF documents.
 //!
 //! # Main Functions
 //!
-//! - [`extract_pdf_pages`]: Extract plain text from PDF pages.
-//! - [`extract_pdf_outline`]: Read bookmark outline and table of contents
+//! - [`extract_pdf_pages`]: Extracts plain text from PDF pages.
+//! - [`extract_pdf_outline`]: Reads bookmark outline and table of contents
 //!   entries.
 //!
 //! ```no_run
@@ -38,12 +38,19 @@ use crate::errors::ZoteroApiError;
 /// * `file_path` - Path to the PDF file on disk.
 /// * `page_numbers` - Optional 1-based page numbers to extract.
 /// * `max_pdf_bytes` - Maximum allowed PDF size in bytes.
+///
 /// # Errors
 ///
-/// - [`ZoteroApiError::NotFound`]: If `file_path` does not exist.
-/// - [`ZoteroApiError::InputRejected`]: If `file_path` is larger than
+/// - [`ZoteroApiError::NotFound`] if `file_path` does not exist.
+/// - [`ZoteroApiError::Io`] if file metadata cannot be read.
+/// - [`ZoteroApiError::InputRejected`] if `file_path` is larger than
 ///   `max_pdf_bytes`.
-/// - [`ZoteroApiError::PdfExtract`]: If text extraction fails.
+/// - [`ZoteroApiError::PdfExtract`] if text extraction fails.
+///
+/// [`ZoteroApiError::InputRejected`]: crate::ZoteroApiError::InputRejected
+/// [`ZoteroApiError::Io`]: crate::ZoteroApiError::Io
+/// [`ZoteroApiError::NotFound`]: crate::ZoteroApiError::NotFound
+/// [`ZoteroApiError::PdfExtract`]: crate::ZoteroApiError::PdfExtract
 #[inline]
 pub fn extract_pdf_pages(
     file_path: &Path,
@@ -100,14 +107,25 @@ fn filter_pages(full_text: &str, page_numbers: Option<&[usize]>) -> String {
 /// `file_path` as a flat list of entries with 1-based `page` numbers.
 ///
 /// A PDF without bookmarks yields an empty [`Vec`]; `get_toc()` reporting no
-/// outline is treated as no-op rather than an error.
+/// outline is treated as an empty outline rather than an error.
+///
+/// # Arguments
+///
+/// * `file_path` - Path to the PDF file on disk.
+/// * `max_pdf_bytes` - Maximum allowed PDF size in bytes.
 ///
 /// # Errors
 ///
-/// - [`ZoteroApiError::NotFound`]: If `file_path` does not exist.
-/// - [`ZoteroApiError::InputRejected`]: If `file_path` is larger than
+/// - [`ZoteroApiError::NotFound`] if `file_path` does not exist.
+/// - [`ZoteroApiError::Io`] if file metadata cannot be read.
+/// - [`ZoteroApiError::InputRejected`] if `file_path` is larger than
 ///   `max_pdf_bytes`.
-/// - [`ZoteroApiError::PdfExtract`]: If outline extraction fails.
+/// - [`ZoteroApiError::PdfExtract`] if the PDF cannot be loaded.
+///
+/// [`ZoteroApiError::InputRejected`]: crate::ZoteroApiError::InputRejected
+/// [`ZoteroApiError::Io`]: crate::ZoteroApiError::Io
+/// [`ZoteroApiError::NotFound`]: crate::ZoteroApiError::NotFound
+/// [`ZoteroApiError::PdfExtract`]: crate::ZoteroApiError::PdfExtract
 #[inline]
 pub fn extract_pdf_outline(
     file_path: &Path,
@@ -143,10 +161,14 @@ pub fn extract_pdf_outline(
         .collect())
 }
 
-/// A single entry in a PDF document outline (table of contents).
+/// A single entry in a PDF document outline or table of contents.
+///
+/// Outline entries are returned as a flat list. The `level` field preserves the
+/// original nesting depth, with `1` for top-level entries and larger values for
+/// nested sections.
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub struct PdfOutlineEntry {
-    /// 1-based nesting level of the outline entry (1 for top-level chapters).
+    /// 1-based nesting level of the outline entry.
     pub(crate) level: usize,
     /// Display title of the section or bookmark.
     pub(crate) title: String,
@@ -154,7 +176,6 @@ pub struct PdfOutlineEntry {
     pub(crate) page: usize,
 }
 
-/// Writes a minimal 2-page PDF with a 3-entry outline to `path`.
 #[cfg(any(test, feature = "test-util"))]
 #[inline]
 #[expect(
@@ -224,7 +245,6 @@ pub fn write_pdf_with_outline(path: &Path) {
     doc.save(path).expect("save pdf");
 }
 
-/// Writes a minimal valid 1-page PDF with no outline to `path`.
 #[cfg(any(test, feature = "test-util"))]
 #[inline]
 #[expect(
