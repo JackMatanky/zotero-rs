@@ -9,7 +9,24 @@ use crate::{
     objects::{BatchWriteResponse, ZoteroItem},
 };
 
-/// Saved search object returned by `GET <prefix>/searches`.
+/// A saved search that stores query conditions server-side.
+///
+/// Saved searches persist filter criteria on the Zotero server,
+/// allowing repeated execution without resending the query.
+///
+/// # Examples
+///
+/// ```ignore
+/// use zotero_api::searches::SavedSearch;
+///
+/// let search = SavedSearch {
+///     key: "ABC12345".into(),
+///     version: 1.into(),
+///     name: "Quantum Papers".into(),
+///     conditions: vec![],
+/// };
+/// assert_eq!(search.name, "Quantum Papers");
+/// ```
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct SavedSearch {
     /// 8-character search key identifier.
@@ -18,18 +35,18 @@ pub struct SavedSearch {
     pub version: LibraryVersion,
     /// Human-readable search name.
     pub name: String,
-    /// Query condition definitions.
+    /// Query condition definitions as an array of JSON objects.
     #[serde(default)]
     pub conditions: Vec<serde_json::Value>,
 }
 
 impl ZoteroClient {
-    /// Lists all saved search filters configured in the target library.
+    /// Lists all [`SavedSearch`] objects in the target library.
     #[inline]
     /// # Errors
     ///
-    /// Returns [`ZoteroApiError::LocalApi`]/[`ZoteroApiError::Network`]/
-    /// [`ZoteroApiError::Json`] if the request fails.
+    /// Returns [`ZoteroApiError::LocalApi`], [`ZoteroApiError::Network`],
+    /// or [`ZoteroApiError::Json`] if the request fails.
     pub async fn list_searches(
         &self,
     ) -> Result<Vec<SavedSearch>, ZoteroApiError> {
@@ -38,12 +55,12 @@ impl ZoteroClient {
         Ok(res.data)
     }
 
-    /// Fetches a single saved search definition by key.
+    /// Fetches a single [`SavedSearch`] by its key.
     #[inline]
     /// # Errors
     ///
-    /// Returns [`ZoteroApiError::LocalApi`]/[`ZoteroApiError::Network`]/
-    /// [`ZoteroApiError::Json`] if the request fails.
+    /// Returns [`ZoteroApiError::LocalApi`], [`ZoteroApiError::Network`],
+    /// or [`ZoteroApiError::Json`] if the request fails.
     pub async fn get_search<K: AsRef<str>>(
         &self,
         key: K,
@@ -54,12 +71,16 @@ impl ZoteroClient {
         Ok(res.data)
     }
 
-    /// Executes a saved search on the Zotero server and returns matching items.
+    /// Executes a [`SavedSearch`] server-side and returns matching
+    /// [`ZoteroItem`]s.
+    ///
+    /// The server evaluates the stored query conditions against the library
+    /// and returns all items that match.
     #[inline]
     /// # Errors
     ///
-    /// Returns [`ZoteroApiError::LocalApi`]/[`ZoteroApiError::Network`]/
-    /// [`ZoteroApiError::Json`] if the request fails.
+    /// Returns [`ZoteroApiError::LocalApi`], [`ZoteroApiError::Network`],
+    /// or [`ZoteroApiError::Json`] if the request fails.
     pub async fn execute_saved_search<K: AsRef<str>>(
         &self,
         key: K,
@@ -70,7 +91,10 @@ impl ZoteroClient {
         Ok(res.data)
     }
 
-    /// Batch-creates new saved search definitions in the library.
+    /// Batch-creates new saved searches in the library.
+    ///
+    /// Each element of `searches` must be a JSON object with `"name"` and
+    /// `"conditions"` fields matching the Zotero search format.
     #[inline]
     /// # Errors
     ///
@@ -88,12 +112,12 @@ impl ZoteroClient {
         Ok(res.data)
     }
 
-    /// Batch-deletes saved searches by key in a single request.
+    /// Batch-deletes saved searches by key.
     #[inline]
     /// # Errors
     ///
-    /// Returns [`ZoteroApiError::LocalApi`]/[`ZoteroApiError::Network`] if
-    /// Zotero rejects the deletion request.
+    /// Returns [`ZoteroApiError::LocalApi`] or [`ZoteroApiError::Network`]
+    /// if Zotero rejects the deletion request.
     pub async fn delete_searches<K: AsRef<str>, V: Into<u64>>(
         &self,
         keys: &[K],
