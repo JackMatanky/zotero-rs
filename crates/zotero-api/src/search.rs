@@ -324,12 +324,8 @@ impl ZoteroClient {
         }
 
         let items = self.get_all_items().await?;
-        let mut query = query_builder::QueryBuilder::new(
-            &conditions,
-            join_mode,
-            offset,
-            limit,
-        );
+        let mut query =
+            QueryBuilder::new(&conditions, join_mode, offset, limit);
         if let Some(field) = sort {
             query = query.sort_by(field, sort_direction);
         }
@@ -417,6 +413,255 @@ impl ZoteroClient {
     }
 }
 
+/// Pre-evaluated search condition for efficient client-side matching.
+struct PreparedCondition<'a> {
+    field: &'a SearchField,
+    operator: &'a SearchOperator,
+    value: &'a str,
+    value_lc: String,
+}
+
+impl<'a> From<&'a SearchCondition> for PreparedCondition<'a> {
+    fn from(cond: &'a SearchCondition) -> Self {
+        Self {
+            field: &cond.field,
+            operator: &cond.operator,
+            value: cond.value.as_str(),
+            value_lc: cond.value.to_lowercase(),
+        }
+    }
+}
+
+impl PreparedCondition<'_> {
+    fn matches_str(&self, s: &str) -> bool {
+        match self.operator {
+            SearchOperator::Is => s.to_lowercase() == self.value_lc,
+            SearchOperator::IsNot => s.to_lowercase() != self.value_lc,
+            SearchOperator::StartsWith => {
+                s.to_lowercase().starts_with(&self.value_lc)
+            }
+            SearchOperator::EndsWith => {
+                s.to_lowercase().ends_with(&self.value_lc)
+            }
+            SearchOperator::DoesNotContain => {
+                !s.to_lowercase().contains(&self.value_lc)
+            }
+            SearchOperator::Contains | SearchOperator::Other(_) => {
+                s.to_lowercase().contains(&self.value_lc)
+            }
+            SearchOperator::IsGreaterThan | SearchOperator::IsAfter => {
+                compare_dates(s, self.value).is_gt()
+            }
+            SearchOperator::IsLessThan | SearchOperator::IsBefore => {
+                compare_dates(s, self.value).is_lt()
+            }
+        }
+    }
+
+    fn matches_item(&self, item: &ZoteroItem) -> bool {
+        match self.field {
+            SearchField::Title => {
+                item.data.title.as_deref().is_some_and(|s| self.matches_str(s))
+            }
+            SearchField::Creator => item.data.creators.iter().any(|c| {
+                c.name.as_deref().is_some_and(|s| self.matches_str(s))
+                    || c.first_name
+                        .as_deref()
+                        .is_some_and(|s| self.matches_str(s))
+                    || c.last_name
+                        .as_deref()
+                        .is_some_and(|s| self.matches_str(s))
+                    || matches_creator_full_name(c, self)
+            }),
+            SearchField::Date => {
+                item.data.date.as_deref().is_some_and(|s| self.matches_str(s))
+            }
+            SearchField::Year => item.data.date.as_deref().is_some_and(|d| {
+                self.matches_str(d.split('-').next().unwrap_or(d))
+            }),
+            SearchField::ItemType => {
+                self.matches_str(item.data.item_type.as_str())
+            }
+            SearchField::Tag => {
+                item.data.tags.iter().any(|t| self.matches_str(t.tag.as_str()))
+            }
+            SearchField::Extra => {
+                item.data.extra.as_deref().is_some_and(|s| self.matches_str(s))
+            }
+            SearchField::Doi => {
+                item.data.doi.as_deref().is_some_and(|s| self.matches_str(s))
+            }
+            SearchField::Other(field_name) => match field_name.as_str() {
+                "title" => item
+                    .data
+                    .title
+                    .as_deref()
+                    .is_some_and(|s| self.matches_str(s)),
+                "doi" => item
+                    .data
+                    .doi
+                    .as_deref()
+                    .is_some_and(|s| self.matches_str(s)),
+                _ => false,
+            },
+        }
+    }
+}
+
+/// Accumulates only the requested page while still counting all matches.
+struct PageAccumulator<T> {
+    offset: usize,
+    limit: usize,
+    total: usize,
+    items: Vec<T>,
+}
+
+impl<T> PageAccumulator<T> {
+    fn new(offset: usize, limit: usize) -> Self {
+        Self {
+            offset,
+            limit,
+            total: 0,
+            items: Vec::with_capacity(limit),
+        }
+    }
+
+    fn push_match(&mut self, item: T) {
+        if self.total >= self.offset && self.items.len() < self.limit {
+            self.items.push(item);
+        }
+        self.total = self.total.saturating_add(1);
+    }
+
+    fn into_page(self) -> SearchPage<T> {
+        let offset = self.offset.min(self.total);
+        let returned = self.items.len();
+        SearchPage {
+            items: self.items,
+            pagination: PaginationInfo {
+                limit: self.limit,
+                offset,
+                total: self.total,
+                has_more: offset.saturating_add(returned) < self.total,
+            },
+        }
+    }
+}
+
+/// Returns a `{items, pagination}` page slicing `results` at
+/// `offset`/`limit`.
+fn paginate<T>(results: Vec<T>, offset: usize, limit: usize) -> SearchPage<T> {
+    let total = results.len();
+    let skip = offset.min(total);
+    let items: Vec<T> = results.into_iter().skip(skip).take(limit).collect();
+    SearchPage {
+        items,
+        pagination: PaginationInfo {
+            limit,
+            offset: skip,
+            total,
+            has_more: skip.saturating_add(limit) < total,
+        },
+    }
+}
+
+/// Returns true for items that are not attachments, notes, or annotations.
+fn is_searchable_item(item: &ZoteroItem) -> bool {
+    item.data.item_type.is_indexable()
+}
+
+fn matches_creator_full_name(
+    creator: &crate::objects::ZoteroCreator,
+    cond: &PreparedCondition<'_>,
+) -> bool {
+    let (Some(first), Some(last)) =
+        (creator.first_name.as_deref(), creator.last_name.as_deref())
+    else {
+        return false;
+    };
+    let mut full = String::with_capacity(
+        first.len().saturating_add(1).saturating_add(last.len()),
+    );
+    full.push_str(first);
+    full.push(' ');
+    full.push_str(last);
+    cond.matches_str(&full)
+}
+
+fn item_matches_conditions(
+    item: &ZoteroItem,
+    conditions: &[PreparedCondition<'_>],
+    join_mode: JoinMode,
+) -> bool {
+    match join_mode {
+        JoinMode::All => conditions.iter().all(|cond| cond.matches_item(item)),
+        JoinMode::Any => conditions.iter().any(|cond| cond.matches_item(item)),
+    }
+}
+
+/// Compares two date-or-year strings by their leading numeric components.
+fn compare_dates(a: &str, b: &str) -> std::cmp::Ordering {
+    date_key(a).cmp(&date_key(b))
+}
+
+fn date_key(s: &str) -> (u32, u32, u32) {
+    let mut parts = s.split('-').filter(|p| !p.is_empty());
+    (
+        next_date_part(&mut parts),
+        next_date_part(&mut parts),
+        next_date_part(&mut parts),
+    )
+}
+
+fn next_date_part<'a>(parts: &mut impl Iterator<Item = &'a str>) -> u32 {
+    parts.next().and_then(|p| p.parse::<u32>().ok()).unwrap_or(0)
+}
+
+/// Sorts `items` by `field` in `direction` and returns the sorted items.
+fn sort_items(
+    items: Vec<ZoteroItem>,
+    field: SortField,
+    direction: SortOrder,
+) -> Vec<ZoteroItem> {
+    let mut keyed: Vec<(String, ZoteroItem)> = items
+        .into_iter()
+        .map(|item| {
+            let key = sort_key(&item, field);
+            (key, item)
+        })
+        .collect();
+    match direction {
+        SortOrder::Asc => keyed.sort_by(|a, b| a.0.cmp(&b.0)),
+        SortOrder::Desc => keyed.sort_by(|a, b| b.0.cmp(&a.0)),
+    }
+    keyed.into_iter().map(|(_, item)| item).collect()
+}
+
+/// Returns the sort key string for `item` under `field`.
+fn sort_key(item: &ZoteroItem, field: SortField) -> String {
+    match field {
+        SortField::Title => item.data.title.clone().unwrap_or_default(),
+        SortField::Date => item.data.date.clone().unwrap_or_default(),
+        SortField::DateAdded => {
+            item.data.date_added.clone().unwrap_or_default()
+        }
+        SortField::DateModified => {
+            item.data.date_modified.clone().unwrap_or_default()
+        }
+        SortField::Creator => {
+            item.data.creators.first().map_or_else(String::new, |c| {
+                c.name.clone().unwrap_or_else(|| {
+                    format!(
+                        "{} {}",
+                        c.first_name.as_deref().unwrap_or(""),
+                        c.last_name.as_deref().unwrap_or("")
+                    )
+                })
+            })
+        }
+    }
+}
+
 /// Client-side query evaluator for advanced searches the Zotero Local API
 /// cannot execute server-side: filters, sorts, and paginates a set of items
 /// already fetched from the server.
@@ -424,368 +669,73 @@ impl ZoteroClient {
 /// Used exclusively by [`ZoteroClient::advanced_search`] as a client-side
 /// fallback when a structured search's conditions cannot be pushed down to
 /// Zotero's quick-search query parameters.
-mod query_builder {
-    use super::{
-        JoinMode, PaginationInfo, SearchCondition, SearchField, SearchOperator,
-        SearchPage, SortField, SortOrder,
-    };
-    use crate::objects::ZoteroItem;
+struct QueryBuilder<'a> {
+    conditions: Vec<PreparedCondition<'a>>,
+    join_mode: JoinMode,
+    sort: Option<(SortField, SortOrder)>,
+    offset: usize,
+    limit: usize,
+}
 
-    /// Pre-evaluated search condition for efficient client-side matching.
-    struct PreparedCondition<'a> {
-        field: &'a SearchField,
-        operator: &'a SearchOperator,
-        value: &'a str,
-        value_lc: String,
-    }
-
-    impl<'a> From<&'a SearchCondition> for PreparedCondition<'a> {
-        fn from(cond: &'a SearchCondition) -> Self {
-            Self {
-                field: &cond.field,
-                operator: &cond.operator,
-                value: cond.value.as_str(),
-                value_lc: cond.value.to_lowercase(),
-            }
-        }
-    }
-
-    impl PreparedCondition<'_> {
-        fn matches_str(&self, s: &str) -> bool {
-            match self.operator {
-                SearchOperator::Is => s.to_lowercase() == self.value_lc,
-                SearchOperator::IsNot => s.to_lowercase() != self.value_lc,
-                SearchOperator::StartsWith => {
-                    s.to_lowercase().starts_with(&self.value_lc)
-                }
-                SearchOperator::EndsWith => {
-                    s.to_lowercase().ends_with(&self.value_lc)
-                }
-                SearchOperator::DoesNotContain => {
-                    !s.to_lowercase().contains(&self.value_lc)
-                }
-                SearchOperator::Contains | SearchOperator::Other(_) => {
-                    s.to_lowercase().contains(&self.value_lc)
-                }
-                SearchOperator::IsGreaterThan | SearchOperator::IsAfter => {
-                    compare_dates(s, self.value).is_gt()
-                }
-                SearchOperator::IsLessThan | SearchOperator::IsBefore => {
-                    compare_dates(s, self.value).is_lt()
-                }
-            }
-        }
-
-        fn matches_item(&self, item: &ZoteroItem) -> bool {
-            match self.field {
-                SearchField::Title => item
-                    .data
-                    .title
-                    .as_deref()
-                    .is_some_and(|s| self.matches_str(s)),
-                SearchField::Creator => item.data.creators.iter().any(|c| {
-                    c.name.as_deref().is_some_and(|s| self.matches_str(s))
-                        || c.first_name
-                            .as_deref()
-                            .is_some_and(|s| self.matches_str(s))
-                        || c.last_name
-                            .as_deref()
-                            .is_some_and(|s| self.matches_str(s))
-                        || matches_creator_full_name(c, self)
-                }),
-                SearchField::Date => item
-                    .data
-                    .date
-                    .as_deref()
-                    .is_some_and(|s| self.matches_str(s)),
-                SearchField::Year => {
-                    item.data.date.as_deref().is_some_and(|d| {
-                        self.matches_str(d.split('-').next().unwrap_or(d))
-                    })
-                }
-                SearchField::ItemType => {
-                    self.matches_str(item.data.item_type.as_str())
-                }
-                SearchField::Tag => item
-                    .data
-                    .tags
-                    .iter()
-                    .any(|t| self.matches_str(t.tag.as_str())),
-                SearchField::Extra => item
-                    .data
-                    .extra
-                    .as_deref()
-                    .is_some_and(|s| self.matches_str(s)),
-                SearchField::Doi => item
-                    .data
-                    .doi
-                    .as_deref()
-                    .is_some_and(|s| self.matches_str(s)),
-                SearchField::Other(field_name) => match field_name.as_str() {
-                    "title" => item
-                        .data
-                        .title
-                        .as_deref()
-                        .is_some_and(|s| self.matches_str(s)),
-                    "doi" => item
-                        .data
-                        .doi
-                        .as_deref()
-                        .is_some_and(|s| self.matches_str(s)),
-                    _ => false,
-                },
-            }
-        }
-    }
-
-    /// Accumulates only the requested page while still counting all matches.
-    struct PageAccumulator<T> {
-        offset: usize,
-        limit: usize,
-        total: usize,
-        items: Vec<T>,
-    }
-
-    impl<T> PageAccumulator<T> {
-        fn new(offset: usize, limit: usize) -> Self {
-            Self {
-                offset,
-                limit,
-                total: 0,
-                items: Vec::with_capacity(limit),
-            }
-        }
-
-        fn push_match(&mut self, item: T) {
-            if self.total >= self.offset && self.items.len() < self.limit {
-                self.items.push(item);
-            }
-            self.total = self.total.saturating_add(1);
-        }
-
-        fn into_page(self) -> SearchPage<T> {
-            let offset = self.offset.min(self.total);
-            let returned = self.items.len();
-            SearchPage {
-                items: self.items,
-                pagination: PaginationInfo {
-                    limit: self.limit,
-                    offset,
-                    total: self.total,
-                    has_more: offset.saturating_add(returned) < self.total,
-                },
-            }
-        }
-    }
-
-    /// Returns a `{items, pagination}` page slicing `results` at
-    /// `offset`/`limit`.
-    fn paginate<T>(
-        results: Vec<T>,
-        offset: usize,
-        limit: usize,
-    ) -> SearchPage<T> {
-        let total = results.len();
-        let skip = offset.min(total);
-        let items: Vec<T> =
-            results.into_iter().skip(skip).take(limit).collect();
-        SearchPage {
-            items,
-            pagination: PaginationInfo {
-                limit,
-                offset: skip,
-                total,
-                has_more: skip.saturating_add(limit) < total,
-            },
-        }
-    }
-
-    /// Returns true for items that are not attachments, notes, or
-    /// annotations.
-    fn is_searchable_item(item: &ZoteroItem) -> bool {
-        item.data.item_type.is_indexable()
-    }
-
-    fn matches_creator_full_name(
-        creator: &crate::objects::ZoteroCreator,
-        cond: &PreparedCondition<'_>,
-    ) -> bool {
-        let (Some(first), Some(last)) =
-            (creator.first_name.as_deref(), creator.last_name.as_deref())
-        else {
-            return false;
-        };
-        let mut full = String::with_capacity(
-            first.len().saturating_add(1).saturating_add(last.len()),
-        );
-        full.push_str(first);
-        full.push(' ');
-        full.push_str(last);
-        cond.matches_str(&full)
-    }
-
-    fn item_matches_conditions(
-        item: &ZoteroItem,
-        conditions: &[PreparedCondition<'_>],
+impl<'a> QueryBuilder<'a> {
+    /// Prepares `conditions` for repeated matching against items.
+    fn new(
+        conditions: &'a [SearchCondition],
         join_mode: JoinMode,
-    ) -> bool {
-        match join_mode {
-            JoinMode::All => {
-                conditions.iter().all(|cond| cond.matches_item(item))
-            }
-            JoinMode::Any => {
-                conditions.iter().any(|cond| cond.matches_item(item))
-            }
-        }
-    }
-
-    /// Compares two date-or-year strings by their leading numeric
-    /// components.
-    fn compare_dates(a: &str, b: &str) -> std::cmp::Ordering {
-        date_key(a).cmp(&date_key(b))
-    }
-
-    fn date_key(s: &str) -> (u32, u32, u32) {
-        let mut parts = s.split('-').filter(|p| !p.is_empty());
-        (
-            next_date_part(&mut parts),
-            next_date_part(&mut parts),
-            next_date_part(&mut parts),
-        )
-    }
-
-    fn next_date_part<'a>(parts: &mut impl Iterator<Item = &'a str>) -> u32 {
-        parts.next().and_then(|p| p.parse::<u32>().ok()).unwrap_or(0)
-    }
-
-    /// Sorts `items` by `field` in `direction` and returns the sorted items.
-    fn sort_items(
-        items: Vec<ZoteroItem>,
-        field: SortField,
-        direction: SortOrder,
-    ) -> Vec<ZoteroItem> {
-        let mut keyed: Vec<(String, ZoteroItem)> = items
-            .into_iter()
-            .map(|item| {
-                let key = sort_key(&item, field);
-                (key, item)
-            })
-            .collect();
-        match direction {
-            SortOrder::Asc => keyed.sort_by(|a, b| a.0.cmp(&b.0)),
-            SortOrder::Desc => keyed.sort_by(|a, b| b.0.cmp(&a.0)),
-        }
-        keyed.into_iter().map(|(_, item)| item).collect()
-    }
-
-    /// Returns the sort key string for `item` under `field`.
-    fn sort_key(item: &ZoteroItem, field: SortField) -> String {
-        match field {
-            SortField::Title => item.data.title.clone().unwrap_or_default(),
-            SortField::Date => item.data.date.clone().unwrap_or_default(),
-            SortField::DateAdded => {
-                item.data.date_added.clone().unwrap_or_default()
-            }
-            SortField::DateModified => {
-                item.data.date_modified.clone().unwrap_or_default()
-            }
-            SortField::Creator => {
-                item.data.creators.first().map_or_else(String::new, |c| {
-                    c.name.clone().unwrap_or_else(|| {
-                        format!(
-                            "{} {}",
-                            c.first_name.as_deref().unwrap_or(""),
-                            c.last_name.as_deref().unwrap_or("")
-                        )
-                    })
-                })
-            }
-        }
-    }
-
-    /// Client-side evaluator for a structured search: filters items against
-    /// [`SearchCondition`]s, optionally sorts, and returns one page.
-    pub(super) struct QueryBuilder<'a> {
-        conditions: Vec<PreparedCondition<'a>>,
-        join_mode: JoinMode,
-        sort: Option<(SortField, SortOrder)>,
         offset: usize,
         limit: usize,
+    ) -> Self {
+        Self {
+            conditions: conditions
+                .iter()
+                .map(PreparedCondition::from)
+                .collect(),
+            join_mode,
+            sort: None,
+            offset,
+            limit,
+        }
     }
 
-    impl<'a> QueryBuilder<'a> {
-        /// Prepares `conditions` for repeated matching against items.
-        pub(super) fn new(
-            conditions: &'a [SearchCondition],
-            join_mode: JoinMode,
-            offset: usize,
-            limit: usize,
-        ) -> Self {
-            Self {
-                conditions: conditions
-                    .iter()
-                    .map(PreparedCondition::from)
-                    .collect(),
-                join_mode,
-                sort: None,
-                offset,
-                limit,
+    /// Sorts matched items by `field` in `direction` before paginating.
+    #[must_use]
+    fn sort_by(mut self, field: SortField, direction: SortOrder) -> Self {
+        self.sort = Some((field, direction));
+        self
+    }
+
+    /// Returns `true` if `item` is searchable and matches every configured
+    /// condition per `join_mode`.
+    fn matches(&self, item: &ZoteroItem) -> bool {
+        is_searchable_item(item)
+            && item_matches_conditions(item, &self.conditions, self.join_mode)
+    }
+
+    /// Filters `items` against the configured conditions, applies the
+    /// configured sort (if any), and returns the requested page.
+    ///
+    /// When no sort is configured, matches are accumulated with
+    /// [`PageAccumulator`] so memory use is bounded by `limit` rather than
+    /// the total match count; sorting requires materializing every match
+    /// first, so that path collects into a `Vec` before slicing.
+    fn run(self, items: Vec<ZoteroItem>) -> SearchPage<ZoteroItem> {
+        if let Some((field, direction)) = self.sort {
+            let matches: Vec<ZoteroItem> =
+                items.into_iter().filter(|item| self.matches(item)).collect();
+            return paginate(
+                sort_items(matches, field, direction),
+                self.offset,
+                self.limit,
+            );
+        }
+
+        let mut page = PageAccumulator::new(self.offset, self.limit);
+        for item in items {
+            if self.matches(&item) {
+                page.push_match(item);
             }
         }
-
-        /// Sorts matched items by `field` in `direction` before paginating.
-        #[must_use]
-        pub(super) fn sort_by(
-            mut self,
-            field: SortField,
-            direction: SortOrder,
-        ) -> Self {
-            self.sort = Some((field, direction));
-            self
-        }
-
-        /// Returns `true` if `item` is searchable and matches every
-        /// configured condition per `join_mode`.
-        fn matches(&self, item: &ZoteroItem) -> bool {
-            is_searchable_item(item)
-                && item_matches_conditions(
-                    item,
-                    &self.conditions,
-                    self.join_mode,
-                )
-        }
-
-        /// Filters `items` against the configured conditions, applies the
-        /// configured sort (if any), and returns the requested page.
-        ///
-        /// When no sort is configured, matches are accumulated with
-        /// [`PageAccumulator`] so memory use is bounded by `limit` rather
-        /// than the total match count; sorting requires materializing every
-        /// match first, so that path collects into a `Vec` before slicing.
-        pub(super) fn run(
-            self,
-            items: Vec<ZoteroItem>,
-        ) -> SearchPage<ZoteroItem> {
-            if let Some((field, direction)) = self.sort {
-                let matches: Vec<ZoteroItem> = items
-                    .into_iter()
-                    .filter(|item| self.matches(item))
-                    .collect();
-                return paginate(
-                    sort_items(matches, field, direction),
-                    self.offset,
-                    self.limit,
-                );
-            }
-
-            let mut page = PageAccumulator::new(self.offset, self.limit);
-            for item in items {
-                if self.matches(&item) {
-                    page.push_match(item);
-                }
-            }
-            page.into_page()
-        }
+        page.into_page()
     }
 }
 
