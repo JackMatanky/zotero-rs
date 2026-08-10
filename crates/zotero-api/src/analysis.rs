@@ -22,8 +22,13 @@ struct ItemCoverageFlags {
     has_notes: bool,
 }
 
-/// Aggregate PDF, DOI, and note coverage statistics for a library or
-/// collection.
+/// Client-side aggregate coverage statistics for a library or collection.
+///
+/// The counts and percentages describe how many returned parent items have:
+///
+/// - a PDF attachment
+/// - a non-empty DOI
+/// - at least one child note
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct LibraryCoverage {
     pub total_items: usize,
@@ -35,7 +40,10 @@ pub struct LibraryCoverage {
     pub notes_percentage: f64,
 }
 
-/// One page of library coverage results alongside pagination metadata.
+/// Paginated library coverage results.
+///
+/// Combines one page of [`LibraryCoverage`] data with [`PaginationInfo`] so
+/// callers can display the aggregate metrics and request the next page.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct LibraryCoveragePage {
     pub coverage: LibraryCoverage,
@@ -43,8 +51,22 @@ pub struct LibraryCoveragePage {
 }
 
 impl ZoteroClient {
-    /// Computes library or optional `collection_key` coverage statistics for
-    /// PDF attachments, DOIs, and child notes.
+    /// Computes client-side PDF, DOI, and note coverage for one item page.
+    ///
+    /// The selected page excludes standalone notes when scanning the full
+    /// library. For each returned item, this method fetches child items and
+    /// computes counts plus percentages for:
+    ///
+    /// - items with PDF attachments
+    /// - items with non-empty DOIs
+    /// - items with child notes
+    ///
+    /// # Arguments
+    ///
+    /// * `collection_key` - Optional collection key to limit the scan. When
+    ///   omitted, the full target library is scanned.
+    /// * `offset` - Zero-based item offset for the page to analyze.
+    /// * `limit` - Maximum number of items to fetch and classify.
     ///
     /// # Errors
     ///
@@ -193,15 +215,20 @@ fn compute_percentage(count: usize, total: usize) -> f64 {
     }
 }
 
-/// Type of duplication criterion matched.
+/// Matching criterion that caused a duplicate group.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum DuplicateType {
+    /// Items share the same normalized DOI.
     Doi,
+    /// Items share the same normalized title.
     Title,
 }
 
-/// Group of items identified as potential duplicates.
+/// Items identified as potential duplicates by normalized DOI or title.
+///
+/// DOI and title values are trimmed and compared case-insensitively. Title
+/// matches only use normalized titles longer than five characters.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct DuplicateGroup {
     pub match_type: DuplicateType,
@@ -210,8 +237,15 @@ pub struct DuplicateGroup {
 }
 
 impl ZoteroClient {
-    /// Scans the library or optional `collection_key` for potential duplicate
-    /// items matching by title or DOI.
+    /// Finds potential duplicate items by DOI or title.
+    ///
+    /// Matching is client-side and groups items only when at least two items
+    /// share a normalized value:
+    ///
+    /// - DOIs are trimmed and compared case-insensitively.
+    /// - Titles are trimmed and compared case-insensitively.
+    /// - Titles must be longer than five characters after trimming.
+    /// - Groups with fewer than two items are ignored.
     ///
     /// # Errors
     ///
