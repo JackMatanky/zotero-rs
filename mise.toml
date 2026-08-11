@@ -23,6 +23,7 @@ gitleaks = "latest"
 "cargo:cargo-sweep" = "latest"
 "cargo:https://github.com/snowmead/rust-docs-mcp" = { version = "branch:main", crate = "rust-docs-mcp" }
 "cargo:adrs" = { version = "latest", install_env = { RUSTUP_TOOLCHAIN = "nightly" } }
+"cargo:ryl" = { version = "latest", install_env = { RUSTUP_TOOLCHAIN = "nightly" } }
 
 [tools."http:onnxruntime"]
 version = "1.28.0"
