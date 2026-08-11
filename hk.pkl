@@ -26,7 +26,10 @@ local hygiene = new Mapping<String, Step> {
 
 local config = new Mapping<String, Step> {
     ["check-json"] = Builtins.jq
-    ["check-yaml"] = Builtins.yamllint
+    ["check-yaml"] = (Builtins.ryl) {
+        check = "ryl --diff --config-data 'extends: default' {{ files }}"
+        fix = "ryl --fix --config-data 'extends: default' {{ files }}"
+    }
     ["tombi-format"] = (Builtins.tombi_format) {
         check = "tombi format --check {{files}}"
     }
