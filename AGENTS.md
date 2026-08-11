@@ -1,3 +1,19 @@
+<!-- agent-skills:start -->
+# Agent skills
+
+## Issue tracker
+
+Issues and specs live as markdown files under `.scratch/<feature-slug>/`. See `docs/agents/issue-tracker.md`.
+
+## Triage labels
+
+Five canonical roles, defaults kept: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. See `docs/agents/triage-labels.md`.
+
+## Domain docs
+
+Multi-context: `CONTEXT-MAP.md` at the root points to one `CONTEXT.md` per crate under `crates/<crate>/`; system-wide ADRs in `docs/adr/`, crate-scoped ADRs in `crates/<crate>/docs/adr/`. See `docs/agents/domain.md`.
+<!-- agent-skills:end -->
+
 <!-- mise:start -->
 # Mise — Environment & Task Orchestration
 
